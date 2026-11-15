@@ -1,0 +1,18 @@
+{
+  "name": "pixel-atelier",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "lint": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "sim": "node --experimental-strip-types scripts/headless-sim.ts"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.69",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6"
+  }
+}
