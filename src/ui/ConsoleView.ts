@@ -79,7 +79,9 @@ export class ConsoleView {
   private resultOverlay: HTMLElement;
   private resultTitle: HTMLElement;
   private resultDesc: HTMLElement;
+  private clearSaveBtn: HTMLButtonElement;
   private benchBtn: HTMLButtonElement;
+  private stageTag: HTMLElement;
   private scoreTag: HTMLElement;
   private starTag: HTMLElement;
   private spriteStatTag: HTMLElement;
@@ -111,11 +113,11 @@ export class ConsoleView {
     const left = el('div', 'joycon is-left');
     left.appendChild(el('div', 'jc-rail-glow'));
 
-    const lBumper = btn('jc-bumper is-l', 'L', 'L：重新開始當前卡匣');
+    const lBumper = btn('jc-bumper is-l', 'L', 'L：重試當前關卡');
     bindMomentaryButton(lBumper, () => {
       pulseHaptic(10);
       this.host.playUiSound('snap');
-      if (this.slotState.phase !== 'empty') this.host.runner.restart();
+      if (this.slotState.phase !== 'empty') this.host.retryStage();
     });
 
     const lTop = el('div', 'jc-row');
@@ -156,13 +158,23 @@ export class ConsoleView {
       pulseHaptic(10);
       this.eject();
     });
-    slotSide.append(this.slotLed, this.slotHint, this.ejectBtn);
+    this.clearSaveBtn = btn('eject-btn is-clear-save panel-hidden', '🗑 重頭', '清除這張卡匣的電池存檔並從第一關重開', () => {
+      const id = this.getInserted();
+      if (!id) return;
+      pulseHaptic(12);
+      this.host.playUiSound('snap');
+      this.host.restartFresh();
+      this.renderRecordBadge(id);
+      this.showCaptureToast('🗑 已清除電池存檔，從第一關重新開始！');
+    });
+    slotSide.append(this.slotLed, this.slotHint, this.clearSaveBtn, this.ejectBtn);
 
     const topbar = el('div', 'screen-topbar');
     const mLeft = el('div', 'screen-metrics');
+    this.stageTag = el('span', 'metric-tag is-stage panel-hidden', '');
     this.scoreTag = el('span', 'metric-tag', '分數 0');
     this.starTag = el('span', 'metric-tag', '★ 0/0');
-    mLeft.append(this.scoreTag, this.starTag);
+    mLeft.append(this.stageTag, this.scoreTag, this.starTag);
     const mRight = el('div', 'screen-metrics');
     this.spriteStatTag = el('span', 'metric-tag', '精靈 0 · 0 draws');
     this.fpsTag = el('span', 'metric-tag', '60 FPS');
@@ -210,12 +222,19 @@ export class ConsoleView {
     const card = el('div', 'overlay-card');
     this.resultTitle = el('h3');
     this.resultDesc = el('p');
-    const replayBtn = btn('toy-btn is-primary', '✨ 再玩一次！', undefined, () => {
+    const resultActions = el('div', 'overlay-actions');
+    const retryStageBtn = btn('toy-btn is-primary', '✨ 重試本關', undefined, () => {
       pulseHaptic(10);
       this.host.playUiSound('snap');
-      this.host.runner.restart();
+      this.host.retryStage();
     });
-    card.append(this.resultTitle, this.resultDesc, replayBtn);
+    const replayFreshBtn = btn('toy-btn', '🔄 從頭開始', undefined, () => {
+      pulseHaptic(10);
+      this.host.playUiSound('snap');
+      this.host.restartFresh();
+    });
+    resultActions.append(retryStageBtn, replayFreshBtn);
+    card.append(this.resultTitle, this.resultDesc, resultActions);
     this.resultOverlay.appendChild(card);
     this.screenFrame.append(this.canvas, this.rpgHudEl, this.insertPrompt, this.resultOverlay);
 
@@ -228,7 +247,7 @@ export class ConsoleView {
       speakerL.appendChild(el('span'));
       speakerR.appendChild(el('span'));
     }
-    const legend = el('div', 'body-legend', 'B 跳躍 · A/R 火花 · X 精靈派對 · F3 碰撞框 · L/+ 重開 · ⌂ 退卡');
+    const legend = el('div', 'body-legend', 'B 跳躍 · A/R 火花 · X 精靈派對 · F3 碰撞框 · L/+ 重試 · ⌂ 退卡');
     this.benchBtn = btn('bench-btn', '✨ 1,150+ GPU 精靈派對', undefined, () => {
       pulseHaptic(10);
       this.toggleBenchmark();
@@ -245,10 +264,10 @@ export class ConsoleView {
 
     const rTop = el('div', 'jc-row');
     rTop.appendChild(
-      btn('jc-sys-btn', '+', '+ 重新開始這張卡匣', () => {
+      btn('jc-sys-btn', '+', '+ 重試本關', () => {
         pulseHaptic(10);
         this.host.playUiSound('snap');
-        if (this.slotState.phase !== 'empty') this.host.runner.restart();
+        if (this.slotState.phase !== 'empty') this.host.retryStage();
       }),
     );
 
@@ -392,8 +411,8 @@ export class ConsoleView {
     if (this.busy) return;
     const currentId = this.getInserted();
     if (currentId === id) {
-      this.host.runner.switchCartridge(id);
-      this.startBoot(id);
+      const resumed = this.host.insertWithSram(id);
+      this.startBoot(id, resumed);
       return;
     }
     const doInsert = () => {
@@ -402,8 +421,8 @@ export class ConsoleView {
       const finish = () => {
         src.classList.add('is-out');
         this.mountSlotCard(id);
-        this.host.runner.switchCartridge(id);
-        this.startBoot(id);
+        const resumed = this.host.insertWithSram(id);
+        this.startBoot(id, resumed);
         this.busy = false;
       };
       pulseHaptic(14);
@@ -427,6 +446,8 @@ export class ConsoleView {
       after?.();
       return;
     }
+    this.host.saveActiveSram();
+    this.host.stopBgm();
     this.host.playUiSound('bounce');
     this.slotState = { phase: 'empty' };
     this.bootLayer?.remove();
@@ -441,6 +462,7 @@ export class ConsoleView {
         c.classList.add('is-returning');
         setTimeout(() => c.classList.remove('is-returning'), 400);
       }
+      this.renderRecordBadge(id);
       this.showEmptyState();
       this.busy = false;
       after?.();
@@ -455,6 +477,12 @@ export class ConsoleView {
   }
 
   public updateHud(snap: RenderSceneSnapshot, stats: GpuFrameStats, fps: number): void {
+    if (snap.stage) {
+      this.stageTag.classList.remove('panel-hidden');
+      this.stageTag.textContent = `${snap.stage.index}/${snap.stage.total} · ${snap.stage.name}`;
+    } else {
+      this.stageTag.classList.add('panel-hidden');
+    }
     const comboStr = snap.comboCount && snap.comboCount > 1 ? ` · ×${snap.comboCount}` : '';
     this.scoreTag.textContent = `分數 ${snap.score}${comboStr}`;
     this.starTag.textContent = `★ ${snap.starsCollected}/${snap.starsTotal}`;
@@ -463,22 +491,25 @@ export class ConsoleView {
     this.renderRpgHud(snap.rpgHud);
 
     const insertedId = this.getInserted();
-    if (insertedId && this.host.saveRecord(insertedId, snap)) {
-      this.renderRecordBadge(insertedId);
+    if (insertedId) {
+      this.clearSaveBtn.classList.toggle('panel-hidden', !this.host.hasSram(insertedId));
+      if (this.host.saveRecord(insertedId, snap)) {
+        this.renderRecordBadge(insertedId);
+      }
     }
 
     if (snap.status !== this.lastBannerState) {
       this.lastBannerState = snap.status;
       if (snap.status === 'won') {
-        this.resultTitle.textContent = snap.rpgHud ? '🐉 餘燼迷宮攻略成功！' : '🎉 太棒了！卡匣過關！';
-        this.resultDesc.textContent = `本次分數 ${snap.score} 分，Momo 開心到在卡槽旁邊跳舞！`;
+        this.resultTitle.textContent = snap.rpgHud ? '🐉 餘燼深淵制霸通關！' : '🎉 太棒了！全關卡制霸！';
+        this.resultDesc.textContent = `總分 ${snap.score} 分，Momo 開心到在卡槽旁邊跳舞！`;
         this.resultOverlay.classList.remove('panel-hidden');
         this.host.reactMomo();
       } else if (snap.status === 'lost') {
         this.resultTitle.textContent = snap.rpgHud ? '💀 冒險者力竭倒下…' : '💫 愛心用完囉～';
         this.resultDesc.textContent = snap.rpgHud
-          ? '英雄在餘燼迷宮力竭了，再試一次並記得多喝藥水或向賢者求助！'
-          : '再挑戰一次，或去積木工房把重力調輕一點！';
+          ? '英雄在餘燼迷宮力竭了，可重試本層營火點或從 B1 重頭攻略！'
+          : '點擊「重試本關」可直接從檢查點／本關繼續，或調整積木工房參數！';
         this.resultOverlay.classList.remove('panel-hidden');
       } else {
         this.resultOverlay.classList.add('panel-hidden');
@@ -504,7 +535,9 @@ export class ConsoleView {
 
     this.rpgHudEl.classList.remove('panel-hidden');
     this.rpgFloorEl.textContent = `${hud.floorName} · T${hud.turnCount}`;
-    this.rpgStatsEl.textContent = `Lv.${hud.level} ❤️${hud.hp}/${hud.maxHp} ✨${hud.mp}/${hud.maxMp} 🛡️${hud.ac} 🔑${hud.keys} 🧪${hud.potions}`;
+    const equipTxt = hud.weaponName ? ` ⚔️${hud.weaponName}` : '';
+    const statusTxt = hud.statuses && hud.statuses.length > 0 ? ` [${hud.statuses.join(',')}]` : '';
+    this.rpgStatsEl.textContent = `Lv.${hud.level} ❤️${hud.hp}/${hud.maxHp} ✨${hud.mp}/${hud.maxMp} 🛡️${hud.ac} 🪙${hud.gold} 🔑${hud.keys} 🧪${hud.potions}${equipTxt}${statusTxt}`;
 
     if (hud.combat) {
       this.rpgEnemyEl.classList.remove('panel-hidden');
@@ -563,10 +596,17 @@ export class ConsoleView {
     const badge = this.recordEls.get(id);
     if (!badge) return;
     const rec = this.host.getRecord(id);
-    if (!rec) {
+    const hasSave = this.host.hasSram(id);
+    if (!rec && !hasSave) {
       badge.textContent = 'NEW';
       badge.classList.remove('is-played');
-    } else {
+    } else if (hasSave && rec) {
+      badge.textContent = `💾 續關 · ★${rec.bestStars}/${rec.starsTotal}`;
+      badge.classList.add('is-played');
+    } else if (hasSave) {
+      badge.textContent = '💾 續關中';
+      badge.classList.add('is-played');
+    } else if (rec) {
       badge.textContent = `★${rec.bestStars}/${rec.starsTotal} · ${rec.bestScore}`;
       badge.classList.add('is-played');
     }
@@ -585,7 +625,7 @@ export class ConsoleView {
     this.cardArtImgs.set(id, list);
   }
 
-  private startBoot(id: CartridgeId): void {
+  private startBoot(id: CartridgeId, resumedSram = false): void {
     const meta = getCartridgeMeta(id);
     this.slotState = { phase: 'booting', id, timer: BOOT_SEC };
     this.lastBannerState = 'playing';
@@ -596,7 +636,8 @@ export class ConsoleView {
     this.slotEl.classList.remove('is-empty');
     this.slotHint.classList.add('panel-hidden');
     this.ejectBtn.classList.remove('panel-hidden');
-    this.statusHintEl.textContent = meta.controlsHint;
+    this.clearSaveBtn.classList.toggle('panel-hidden', !this.host.hasSram(id));
+    this.statusHintEl.textContent = resumedSram ? `💾 已讀取 SRAM 續關進度｜${meta.controlsHint}` : meta.controlsHint;
     this.syncStatusLights();
     this.playRailSnap();
 
@@ -608,7 +649,12 @@ export class ConsoleView {
     art.src = renderCardArt(this.atlas, id);
     const bar = el('div', 'boot-bar');
     bar.appendChild(el('span'));
-    boot.append(art, el('h3', 'boot-title', meta.title), el('span', 'boot-brand', 'PIXEL ATELIER · GAME CARD'), bar);
+    boot.append(
+      art,
+      el('h3', 'boot-title', meta.title),
+      el('span', 'boot-brand', resumedSram ? 'SRAM 電池存檔續關中…' : 'PIXEL ATELIER · GAME CARD'),
+      bar,
+    );
     this.screenFrame.appendChild(boot);
     this.bootLayer = boot;
     this.host.playUiSound('key');
@@ -618,12 +664,14 @@ export class ConsoleView {
   private showEmptyState(): void {
     this.rpgHudEl.classList.add('panel-hidden');
     this.lastRpgActionsKey = '';
+    this.stageTag.classList.add('panel-hidden');
     this.insertPrompt.classList.remove('panel-hidden');
     this.resultOverlay.classList.add('panel-hidden');
     this.slotEl.classList.add('is-empty');
     this.slotHint.textContent = DEFAULT_SLOT_HINT;
     this.slotHint.classList.remove('panel-hidden');
     this.ejectBtn.classList.add('panel-hidden');
+    this.clearSaveBtn.classList.add('panel-hidden');
     this.scoreTag.textContent = '分數 0';
     this.starTag.textContent = '★ 0/0';
     this.statusHintEl.textContent = '從卡匣收納盒挑一張遊戲卡插進主機吧！';

@@ -77,15 +77,36 @@ export class CartridgeRunner {
     return this.debugHitboxes;
   }
 
-  public switchCartridge(id: CartridgeId): void {
+  public switchCartridge(id: CartridgeId, savedSram?: unknown): boolean {
     this.cartridgeId = id;
     this.accumulator = 0;
     this.instance = this.createInstance(id);
+    if (savedSram !== undefined && savedSram !== null && this.instance.hydrateSave) {
+      return this.instance.hydrateSave(savedSram);
+    }
+    return false;
   }
 
   public restart(): void {
     this.accumulator = 0;
     this.instance = this.createInstance(this.cartridgeId);
+  }
+
+  public retryStage(): void {
+    this.accumulator = 0;
+    if (this.instance.retryStage) {
+      this.instance.retryStage();
+    } else {
+      this.instance = this.createInstance(this.cartridgeId);
+    }
+  }
+
+  public serializeSave(): unknown {
+    return this.instance.serializeSave?.() ?? null;
+  }
+
+  public hydrateSave(raw: unknown): boolean {
+    return this.instance.hydrateSave?.(raw) ?? false;
   }
 
   public getParams(): RuntimeParams {

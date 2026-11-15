@@ -1,3 +1,5 @@
+import type { BgmTheme } from '../engine/WorldTypes.ts';
+
 export type SynthWaveform = 'square' | 'triangle' | 'sine' | 'chime';
 
 export type SoundPreset =
@@ -33,6 +35,44 @@ export const TOY_PIANO_KEYS: readonly PentatonicKey[] = [
 
 const PENTATONIC_RATIOS = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2, 9 / 4, 5 / 2];
 
+interface BgmPattern {
+  stepSec: number;
+  lead: readonly number[];
+  bass: readonly number[];
+  leadWave: OscillatorType;
+}
+
+const BGM_PATTERNS: Record<BgmTheme, BgmPattern> = {
+  meadow: {
+    stepSec: 0.16,
+    leadWave: 'triangle',
+    lead: [72, 0, 76, 79, 84, 0, 79, 76, 74, 0, 79, 76, 72, 74, 76, 0],
+    bass: [48, 0, 55, 0, 52, 0, 55, 0, 50, 0, 55, 0, 48, 0, 55, 0],
+  },
+  starlight: {
+    stepSec: 0.135,
+    leadWave: 'square',
+    lead: [76, 79, 83, 0, 81, 79, 76, 74, 72, 76, 79, 0, 84, 83, 79, 0],
+    bass: [45, 45, 52, 45, 48, 48, 55, 48, 43, 43, 50, 43, 45, 52, 57, 0],
+  },
+  dungeon: {
+    stepSec: 0.22,
+    leadWave: 'sine',
+    lead: [64, 0, 67, 0, 69, 0, 67, 64, 62, 0, 64, 0, 60, 0, 59, 0],
+    bass: [40, 0, 0, 47, 45, 0, 0, 40, 38, 0, 43, 0, 40, 0, 0, 0],
+  },
+  boss: {
+    stepSec: 0.115,
+    leadWave: 'square',
+    lead: [69, 72, 76, 75, 76, 0, 79, 76, 74, 72, 71, 72, 76, 74, 72, 71],
+    bass: [45, 45, 57, 45, 43, 43, 55, 43, 41, 41, 53, 41, 40, 40, 52, 40],
+  },
+};
+
+function midiToFreq(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
 const PRESET_COOLDOWN_MS: Record<SoundPreset, number> = {
   jump: 35,
   bounce: 45,
@@ -58,6 +98,9 @@ export class ToySynth {
 
   private pendingQueue = new Map<SoundPreset, number>();
   private lastPlayedAt = new Map<SoundPreset, number>();
+  private bgmTheme: BgmTheme | null = null;
+  private bgmStep = 0;
+  private bgmTimer = 0;
 
   public unlock(): void {
     if (typeof window === 'undefined') return;
@@ -243,5 +286,34 @@ export class ToySynth {
         this.playTone(760 * jit, 520 * jit, 0.035, 0, 'sine', 0.3);
         break;
     }
+  }
+
+  public setBgmTheme(theme: BgmTheme | null): void {
+    if (this.bgmTheme === theme) return;
+    this.bgmTheme = theme;
+    this.bgmStep = 0;
+    this.bgmTimer = 0;
+  }
+
+  public tickBgm(dt: number): void {
+    if (this.muted || !this.bgmTheme || typeof window === 'undefined') return;
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const pat = BGM_PATTERNS[this.bgmTheme];
+    this.bgmTimer += dt;
+    if (this.bgmTimer < pat.stepSec) return;
+    this.bgmTimer -= pat.stepSec;
+
+    const idx = this.bgmStep % pat.lead.length;
+    const leadNote = pat.lead[idx];
+    const bassNote = pat.bass[idx];
+    if (leadNote > 0) {
+      const f = midiToFreq(leadNote);
+      this.playTone(f, f, pat.stepSec * 0.85, 0, pat.leadWave, 0.14);
+    }
+    if (bassNote > 0) {
+      const bf = midiToFreq(bassNote);
+      this.playTone(bf, bf, pat.stepSec * 0.9, 0, 'triangle', 0.16);
+    }
+    this.bgmStep = (this.bgmStep + 1) % pat.lead.length;
   }
 }

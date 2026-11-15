@@ -1,6 +1,8 @@
 import { GAME_H, GAME_W } from '../../gpu/GpuTypes.ts';
 import type { SpriteId } from '../../gpu/TextureAtlas.ts';
 import type {
+  BgmTheme,
+  CartridgeId,
   BgCloudDesc,
   BgStarDesc,
   DebugRectDesc,
@@ -11,8 +13,8 @@ import type {
   RenderSceneSnapshot,
   RuntimeParams,
   SimEvent,
+  StageProgressInfo,
   TileDesc,
-  CartridgeId,
 } from '../WorldTypes.ts';
 import { ARCHETYPE_CATALOG, type ArchetypeId, type TraitTag } from './Archetypes.ts';
 import { InputMap } from './InputMap.ts';
@@ -32,6 +34,8 @@ import { SeededRng } from './SeededRng.ts';
 export interface WorldEntity extends RuleEntityLike {
   archetype: ArchetypeId;
   sprite: SpriteId;
+  hp: number;
+  maxHp: number;
   minX?: number;
   maxX?: number;
   patrolVx?: number;
@@ -39,6 +43,22 @@ export interface WorldEntity extends RuleEntityLike {
   friction: number;
   phase: number;
   flipX?: boolean;
+  portalGroup?: string;
+}
+
+export interface MovingPlatform {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  vx: number;
+  vy: number;
+  prevX: number;
+  prevY: number;
 }
 
 interface SparkProjectile {
@@ -47,6 +67,11 @@ interface SparkProjectile {
   vx: number;
   vy: number;
   life: number;
+}
+
+export interface HeroRelics {
+  doubleJump: boolean;
+  airDash: boolean;
 }
 
 export interface WorldConfig {
@@ -58,6 +83,8 @@ export interface WorldConfig {
   ambientDarkness?: number;
   ambientColor?: string;
   statusBanner?: string;
+  stage?: StageProgressInfo;
+  bgmTheme?: BgmTheme;
 }
 
 export interface HeroState {
@@ -68,18 +95,23 @@ export interface HeroState {
   facingLeft: boolean;
   onGround: boolean;
   coyote: number;
+  airJumpsLeft: number;
+  dashTimer: number;
+  dashCooldown: number;
+  portalCooldown: number;
   walkAnim: number;
   invuln: number;
   flash: number;
   squash: SquashSpring;
+  checkpoint: { x: number; y: number } | null;
 }
 
 const HERO_HB = { x: 2, y: 2, w: 12, h: 14 };
 
 /**
  * Shared 2D Platformer & Systemic Simulation Kernel.
- * Combines fixed-step kinematics (Coyote Time, Jump Buffer, Apex Hang Time, Corner Correction),
- * InputMap edge tracking, JuiceSystem (Hitstop + Trauma^2 + Flash), and Tag x Tag RuleMatrix.
+ * Combines fixed-step kinematics (Coyote Time, Jump Buffer, Double Jump, Air Dash, Apex Hang Time,
+ * Corner Correction, Moving Platforms, Checkpoints, Portals), InputMap, JuiceSystem, and Tag x Tag RuleMatrix.
  */
 export class WorldKernel {
   public readonly input = new InputMap();
@@ -94,6 +126,10 @@ export class WorldKernel {
   public ambientDarkness: number;
   public ambientColor: string;
   public statusBanner: string;
+  public stage?: StageProgressInfo;
+  public bgmTheme?: BgmTheme;
+
+  public relics: HeroRelics = { doubleJump: false, airDash: false };
 
   public hero: HeroState = {
     x: 34,
@@ -103,10 +139,15 @@ export class WorldKernel {
     facingLeft: false,
     onGround: false,
     coyote: 0,
+    airJumpsLeft: 0,
+    dashTimer: 0,
+    dashCooldown: 0,
+    portalCooldown: 0,
     walkAnim: 0,
     invuln: 0,
     flash: 0,
     squash: { scaleX: 1, scaleY: 1 },
+    checkpoint: null,
   };
 
   public hearts = 3;
@@ -118,8 +159,11 @@ export class WorldKernel {
   public cameraX = 0;
   public cameraY = 0;
   public debugHitboxes = false;
+  public noticeBanner = '';
+  public noticeTimer = 0;
 
   public solids: RectBox[] = [];
+  public movingPlatforms: MovingPlatform[] = [];
   public tiles: TileDesc[] = [];
   public entities: WorldEntity[] = [];
   public sparks: SparkProjectile[] = [];
@@ -140,10 +184,59 @@ export class WorldKernel {
     this.ambientDarkness = cfg.ambientDarkness ?? 0;
     this.ambientColor = cfg.ambientColor ?? '#120e24';
     this.statusBanner = cfg.statusBanner ?? '';
+    this.stage = cfg.stage;
+    this.bgmTheme = cfg.bgmTheme;
   }
 
-  public addSolidTileRect(x: number, y: number, w: number, h: number, sprite: SpriteId = 'stone', tint?: string): void {
-    this.solids.push({ x, y, w, h, kind: 'solid' });
+  public resetStage(cfg: Partial<WorldConfig> & { spawnX?: number; spawnY?: number }): void {
+    if (cfg.worldWidth !== undefined) this.worldW = cfg.worldWidth;
+    if (cfg.worldHeight !== undefined) this.worldH = cfg.worldHeight;
+    if (cfg.skyTop !== undefined) this.skyTop = cfg.skyTop;
+    if (cfg.skyBottom !== undefined) this.skyBottom = cfg.skyBottom;
+    if (cfg.ambientDarkness !== undefined) this.ambientDarkness = cfg.ambientDarkness;
+    if (cfg.ambientColor !== undefined) this.ambientColor = cfg.ambientColor;
+    if (cfg.statusBanner !== undefined) this.statusBanner = cfg.statusBanner;
+    if (cfg.stage !== undefined) this.stage = cfg.stage;
+    if (cfg.bgmTheme !== undefined) this.bgmTheme = cfg.bgmTheme;
+
+    this.solids = [];
+    this.movingPlatforms = [];
+    this.tiles = [];
+    this.entities = [];
+    this.sparks = [];
+    this.juice.particles.length = 0;
+    this.starsTotal = 0;
+    this.starsCollected = 0;
+    this.hasGate = false;
+    this.gateUnlocked = false;
+    this.status = 'playing';
+    this.cameraX = 0;
+    this.cameraY = 0;
+
+    this.hero.x = cfg.spawnX ?? 24;
+    this.hero.y = cfg.spawnY ?? 120;
+    this.hero.vx = 0;
+    this.hero.vy = 0;
+    this.hero.onGround = false;
+    this.hero.coyote = 0;
+    this.hero.airJumpsLeft = this.relics.doubleJump ? 1 : 0;
+    this.hero.dashTimer = 0;
+    this.hero.dashCooldown = 0;
+    this.hero.portalCooldown = 0;
+    this.hero.invuln = 0;
+    this.hero.checkpoint = { x: this.hero.x, y: this.hero.y };
+  }
+
+  public addSolidTileRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    sprite: SpriteId = 'stone',
+    tint?: string,
+    unlockable = false,
+  ): void {
+    this.solids.push({ x, y, w, h, kind: 'solid', unlockable });
     for (let tx = x; tx < x + w; tx += 16) {
       for (let ty = y; ty < y + h; ty += 16) {
         this.tiles.push({
@@ -153,6 +246,7 @@ export class WorldKernel {
           w: Math.min(16, x + w - tx),
           h: Math.min(16, y + h - ty),
           tint,
+          unlockable,
         });
       }
     }
@@ -168,13 +262,37 @@ export class WorldKernel {
     this.tiles.push({ sprite: 'cloud_r', x: x + (count - 1) * 16, y, w: 16, h: 16 });
   }
 
+  public addMovingPlatform(
+    x: number,
+    y: number,
+    tilesWide: number,
+    opts: { minX?: number; maxX?: number; minY?: number; maxY?: number; vx?: number; vy?: number },
+  ): void {
+    const w = Math.max(2, Math.min(6, Math.round(tilesWide))) * 16;
+    this.movingPlatforms.push({
+      x,
+      y,
+      w,
+      h: 10,
+      minX: opts.minX ?? x,
+      maxX: opts.maxX ?? x,
+      minY: opts.minY ?? y,
+      maxY: opts.maxY ?? y,
+      vx: opts.vx ?? 0,
+      vy: opts.vy ?? 0,
+      prevX: x,
+      prevY: y,
+    });
+  }
+
   public spawn(
     archetypeId: ArchetypeId,
     x: number,
     y: number,
-    overrides?: { minX?: number; maxX?: number; vx?: number },
+    overrides?: { minX?: number; maxX?: number; vx?: number; hp?: number; portalGroup?: string },
   ): WorldEntity {
     const def = ARCHETYPE_CATALOG[archetypeId];
+    const maxHp = overrides?.hp ?? def.maxHp ?? 1;
     const ent: WorldEntity = {
       id: `${archetypeId}-${this.nextId++}`,
       archetype: archetypeId,
@@ -186,6 +304,8 @@ export class WorldKernel {
       vy: 0,
       w: def.w,
       h: def.h,
+      hp: maxHp,
+      maxHp,
       minX: overrides?.minX,
       maxX: overrides?.maxX,
       patrolVx: def.patrolSpeed,
@@ -200,11 +320,16 @@ export class WorldKernel {
       lightRadius: def.lightRadius,
       lightColor: def.lightColor,
       lightIntensity: def.lightIntensity,
+      portalGroup: overrides?.portalGroup ?? 'main',
     };
     this.entities.push(ent);
     if (archetypeId === 'star') this.starsTotal++;
     if (archetypeId === 'gate') this.hasGate = true;
     return ent;
+  }
+
+  public getStageStars(): { collected: number; total: number } {
+    return { collected: this.starsCollected, total: this.starsTotal };
   }
 
   private detonate(
@@ -253,6 +378,7 @@ export class WorldKernel {
     this.input.update(rawInput, dt);
 
     const simDt = this.juice.advanceRealTime(dt, params.shakeScale);
+    if (this.noticeTimer > 0) this.noticeTimer = Math.max(0, this.noticeTimer - dt);
 
     // Drift background clouds cleanly on visual clock
     for (const c of this.bgClouds) {
@@ -273,6 +399,8 @@ export class WorldKernel {
 
     this.elapsedSec += simDt;
     if (this.hero.invuln > 0) this.hero.invuln = Math.max(0, this.hero.invuln - simDt);
+    if (this.hero.dashCooldown > 0) this.hero.dashCooldown = Math.max(0, this.hero.dashCooldown - simDt);
+    if (this.hero.portalCooldown > 0) this.hero.portalCooldown = Math.max(0, this.hero.portalCooldown - simDt);
 
     const actions: RuleWorldActions = {
       emit: (ev) => events.push(ev),
@@ -281,6 +409,8 @@ export class WorldKernel {
       },
       unlockGates: () => {
         this.gateUnlocked = true;
+        this.solids = this.solids.filter((s) => !s.unlockable);
+        this.tiles = this.tiles.filter((t) => !t.unlockable);
         for (const e of this.entities) {
           if (e.tags.has('gate')) {
             e.sprite = 'gate_open';
@@ -303,6 +433,7 @@ export class WorldKernel {
       },
     };
 
+    this.stepMovingPlatforms(simDt);
     this.stepHero(simDt, params, actions);
     this.stepSparks(simDt, actions);
     this.stepEntities(simDt, params, actions);
@@ -325,18 +456,66 @@ export class WorldKernel {
     return events;
   }
 
+  private stepMovingPlatforms(dt: number): void {
+    for (const mp of this.movingPlatforms) {
+      mp.prevX = mp.x;
+      mp.prevY = mp.y;
+      if (mp.vx !== 0) {
+        mp.x += mp.vx * dt;
+        if (mp.x <= mp.minX) {
+          mp.x = mp.minX;
+          mp.vx = Math.abs(mp.vx);
+        } else if (mp.x >= mp.maxX) {
+          mp.x = mp.maxX;
+          mp.vx = -Math.abs(mp.vx);
+        }
+      }
+      if (mp.vy !== 0) {
+        mp.y += mp.vy * dt;
+        if (mp.y <= mp.minY) {
+          mp.y = mp.minY;
+          mp.vy = Math.abs(mp.vy);
+        } else if (mp.y >= mp.maxY) {
+          mp.y = mp.maxY;
+          mp.vy = -Math.abs(mp.vy);
+        }
+      }
+    }
+  }
+
   private getSolidBoxes(includeEntitySolids = true): RectBox[] {
-    if (!includeEntitySolids) return this.solids;
     const boxes = this.solids.slice();
-    for (const e of this.entities) {
-      if (e.alive && e.tags.has('solid')) {
-        boxes.push({ x: e.x, y: e.y, w: e.w, h: e.h, kind: 'solid' });
+    for (const mp of this.movingPlatforms) {
+      boxes.push({ x: mp.x, y: mp.y, w: mp.w, h: mp.h, kind: 'cloud' });
+    }
+    if (includeEntitySolids) {
+      for (const e of this.entities) {
+        if (e.alive && e.tags.has('solid')) {
+          boxes.push({ x: e.x, y: e.y, w: e.w, h: e.h, kind: 'solid' });
+        }
       }
     }
     return boxes;
   }
 
   private stepHero(dt: number, params: RuntimeParams, actions: RuleWorldActions): void {
+    // Carry hero cleanly with moving platform stood upon last tick
+    const h = this.hero;
+    if (h.onGround) {
+      for (const mp of this.movingPlatforms) {
+        const feetY = h.y + HERO_HB.y + HERO_HB.h;
+        if (
+          Math.abs(feetY - mp.prevY) <= 3 &&
+          h.x + HERO_HB.x + HERO_HB.w > mp.prevX &&
+          h.x + HERO_HB.x < mp.prevX + mp.w
+        ) {
+          h.x += mp.x - mp.prevX;
+          h.y += mp.y - mp.prevY;
+          break;
+        }
+      }
+    }
+
     this.stepHeroControls(dt, params, actions);
     this.resolveHeroMotion(dt, actions);
     this.rescueHeroFromAbyss(actions);
@@ -346,21 +525,34 @@ export class WorldKernel {
   private stepHeroControls(dt: number, params: RuntimeParams, actions: RuleWorldActions): void {
     const h = this.hero;
     const dir = this.input.axisX();
-    if (dir !== 0) {
-      h.facingLeft = dir < 0;
-      const targetVx = dir * params.moveSpeed;
-      const accel = h.onGround ? 960 : 640;
-      h.vx =
-        h.vx < targetVx
-          ? Math.min(targetVx, h.vx + accel * dt)
-          : Math.max(targetVx, h.vx - accel * dt);
-      h.walkAnim += dt * 9;
+
+    if (h.dashTimer > 0) {
+      h.dashTimer = Math.max(0, h.dashTimer - dt);
+      h.vy = 0;
+      if (Math.random() < 0.65) {
+        actions.spawnBurst(h.x + 8, h.y + 8, ['#ff708d', '#5ec2f7', '#fffaf0'], 2);
+      }
     } else {
-      const decel = h.onGround ? 880 : 300;
-      h.vx =
-        h.vx > 0
-          ? Math.max(0, h.vx - decel * dt)
-          : Math.min(0, h.vx + decel * dt);
+      if (dir !== 0) {
+        h.facingLeft = dir < 0;
+        const targetVx = dir * params.moveSpeed;
+        const accel = h.onGround ? 960 : 640;
+        h.vx =
+          h.vx < targetVx
+            ? Math.min(targetVx, h.vx + accel * dt)
+            : Math.max(targetVx, h.vx - accel * dt);
+        h.walkAnim += dt * 9;
+      } else {
+        const decel = h.onGround ? 880 : 300;
+        h.vx =
+          h.vx > 0
+            ? Math.max(0, h.vx - decel * dt)
+            : Math.min(0, h.vx + decel * dt);
+      }
+    }
+
+    if (h.onGround) {
+      h.airJumpsLeft = this.relics.doubleJump ? 1 : 0;
     }
 
     if (this.input.justPressed('jump') || this.input.justPressed('up')) {
@@ -376,27 +568,52 @@ export class WorldKernel {
       h.squash = { scaleX: 0.78, scaleY: 1.24 };
       actions.emit('jump');
       actions.spawnBurst(h.x + 8, h.y + 15, ['#fffaf0', '#56d39c'], 4);
+    } else if (
+      this.input.hasBuffered('jump') &&
+      this.relics.doubleJump &&
+      h.airJumpsLeft > 0 &&
+      !h.onGround
+    ) {
+      this.input.consumeBuffer('jump');
+      h.airJumpsLeft--;
+      h.vy = -params.jumpPower * 0.94;
+      h.dashTimer = 0;
+      h.squash = { scaleX: 0.74, scaleY: 1.28 };
+      actions.emit('jump');
+      actions.spawnBurst(h.x + 8, h.y + 15, ['#5ec2f7', '#fffaf0', '#ffd447'], 8);
     }
 
-    if (!this.input.held('jump') && !this.input.held('up') && h.vy < -60) {
+    if (h.dashTimer <= 0 && !this.input.held('jump') && !this.input.held('up') && h.vy < -60) {
       h.vy *= 0.86;
     }
 
-    const apexBoost = !h.onGround && Math.abs(h.vy) < 38 ? 0.56 : 1.0;
-    h.vy = Math.min(340, h.vy + 590 * params.gravityScale * apexBoost * dt);
+    if (h.dashTimer <= 0) {
+      const apexBoost = !h.onGround && Math.abs(h.vy) < 38 ? 0.56 : 1.0;
+      h.vy = Math.min(340, h.vy + 590 * params.gravityScale * apexBoost * dt);
+    }
 
     if (this.input.justPressed('action')) {
       const sign = h.facingLeft ? -1 : 1;
-      this.sparks.push({
-        x: h.x + 8 + sign * 7,
-        y: h.y + 7,
-        vx: sign * 155,
-        vy: -22,
-        life: 0.42,
-      });
-      h.squash = { scaleX: 1.15, scaleY: 0.88 };
-      actions.emit('ignite');
-      actions.spawnBurst(h.x + 8 + sign * 8, h.y + 7, ['#ffd447', '#fffaf0'], 4);
+      if (this.relics.airDash && !h.onGround && h.dashCooldown <= 0) {
+        h.dashTimer = 0.14;
+        h.dashCooldown = 0.55;
+        h.vx = sign * 235;
+        h.vy = 0;
+        h.squash = { scaleX: 1.32, scaleY: 0.72 };
+        actions.emit('snap');
+        actions.spawnBurst(h.x + 8, h.y + 8, ['#ff708d', '#5ec2f7', '#fffaf0'], 10);
+      } else {
+        this.sparks.push({
+          x: h.x + 8 + sign * 7,
+          y: h.y + 7,
+          vx: sign * 155,
+          vy: -22,
+          life: 0.42,
+        });
+        h.squash = { scaleX: 1.15, scaleY: 0.88 };
+        actions.emit('ignite');
+        actions.spawnBurst(h.x + 8 + sign * 8, h.y + 7, ['#ffd447', '#fffaf0'], 4);
+      }
     }
   }
 
@@ -434,7 +651,7 @@ export class WorldKernel {
     for (const s of this.getSolidBoxes(true)) {
       if (h.x + hbX + hbW <= s.x || h.x + hbX >= s.x + s.w) continue;
       if (s.kind === 'cloud') {
-        if (h.vy >= 0 && prevBottom <= s.y + 5 && h.y + hbY + hbH >= s.y) {
+        if (h.vy >= 0 && prevBottom <= s.y + 6 && h.y + hbY + hbH >= s.y) {
           h.y = s.y - hbY - hbH;
           h.vy = 0;
           h.onGround = true;
@@ -477,8 +694,13 @@ export class WorldKernel {
       this.status = 'lost';
       return;
     }
-    h.x = Math.max(24, Math.min(h.x - 36, this.worldW - 40));
-    h.y = 48;
+    if (h.checkpoint) {
+      h.x = h.checkpoint.x;
+      h.y = h.checkpoint.y;
+    } else {
+      h.x = Math.max(24, Math.min(h.x - 36, this.worldW - 40));
+      h.y = 48;
+    }
     h.vx = 0;
     h.vy = 0;
     h.invuln = 1.25;
@@ -497,11 +719,58 @@ export class WorldKernel {
 
       if (e.tags.has('collectible') && dist < 13) {
         e.alive = false;
-        this.starsCollected++;
+        if (e.archetype === 'star') {
+          this.starsCollected++;
+          actions.addScore(100);
+        } else {
+          actions.addScore(50);
+        }
         this.juice.registerCombo();
-        actions.addScore(100);
         actions.emit('star');
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#fffaf0', '#ff708d'], 9);
+      } else if (e.tags.has('relic') && dist < 14) {
+        e.alive = false;
+        if (e.archetype === 'feather') {
+          this.relics.doubleJump = true;
+          h.airJumpsLeft = 1;
+          this.noticeBanner = '🪶 獲得「雲海羽毛」！解鎖【二段跳】！';
+        } else if (e.archetype === 'dash_badge') {
+          this.relics.airDash = true;
+          this.noticeBanner = '⚡ 獲得「流星徽章」！空中按 A 施展【空中衝刺】！';
+        }
+        this.noticeTimer = 4.0;
+        actions.addScore(250);
+        actions.emit('key');
+        actions.triggerJuice(0.05, 0.25, '#5ec2f7', 0.22);
+        actions.spawnBurst(ecx, ecy, ['#5ec2f7', '#ffd447', '#fffaf0'], 16);
+      } else if (e.tags.has('checkpoint') && !e.active && dist < 15) {
+        e.active = true;
+        e.sprite = 'flag_on';
+        e.lightColor = '#ffd447';
+        e.lightIntensity = 0.52;
+        h.checkpoint = { x: e.x, y: e.y - 2 };
+        this.hearts = Math.min(this.maxHearts, this.hearts + 1);
+        this.noticeBanner = '🚩 已啟用中繼檢查點！愛心恢復 +1';
+        this.noticeTimer = 2.6;
+        actions.addScore(80);
+        actions.emit('star');
+        actions.spawnBurst(ecx, ecy, ['#56d39c', '#ffd447', '#fffaf0'], 12);
+      } else if (e.tags.has('portal') && h.portalCooldown <= 0 && dist < 12) {
+        const partner = this.entities.find(
+          (o) => o.alive && o.id !== e.id && o.tags.has('portal') && o.portalGroup === e.portalGroup,
+        );
+        if (partner) {
+          h.x = partner.x;
+          h.y = partner.y;
+          h.vx = 0;
+          h.vy = 0;
+          h.portalCooldown = 0.7;
+          actions.emit('snap');
+          actions.triggerJuice(0.02, 0.18, '#e0aaff', 0.18);
+          actions.spawnBurst(ecx, ecy, ['#e0aaff', '#5ec2f7'], 10);
+          actions.spawnBurst(partner.x + 8, partner.y + 8, ['#e0aaff', '#fffaf0'], 12);
+          break;
+        }
       } else if (e.tags.has('key') && dist < 14) {
         e.alive = false;
         actions.unlockGates();
@@ -512,6 +781,7 @@ export class WorldKernel {
       } else if (e.tags.has('bouncy') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
         h.vy = -params.jumpPower * 1.42;
         h.onGround = false;
+        h.airJumpsLeft = this.relics.doubleJump ? 1 : 0;
         h.squash = { scaleX: 0.72, scaleY: 1.32 };
         e.scaleX = 1.38;
         e.scaleY = 0.62;
@@ -529,15 +799,39 @@ export class WorldKernel {
         actions.emit('win');
         actions.triggerJuice(0.06, 0.4, '#fffaf0', 0.28);
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#56d39c', '#ff708d', '#5ec2f7'], 24);
-      } else if (e.tags.has('stompable') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
-        if (h.vy > 8 && hcy - ecy < 5) {
-          destroyFragile(e, actions, 12);
-          h.vy = -params.jumpPower * 0.85;
+      } else if (
+        e.tags.has('stompable') &&
+        Math.abs(hcx - ecx) < e.w * 0.5 + 5 &&
+        Math.abs(hcy - ecy) < e.h * 0.5 + 5
+      ) {
+        if (h.vy > 8 && hcy - ecy < 7) {
+          h.vy = -params.jumpPower * (e.tags.has('boss') ? 1.08 : 0.85);
+          h.airJumpsLeft = this.relics.doubleJump ? 1 : 0;
           h.squash = { scaleX: 1.24, scaleY: 0.76 };
           this.juice.registerCombo();
-          actions.emit('stomp');
-          actions.triggerJuice(0.04, 0.3, '#fffaf0', 0.14);
-        } else if (h.invuln <= 0) {
+          if (e.tags.has('boss')) {
+            e.hp--;
+            e.flashTimer = 0.22;
+            e.scaleX = 1.35;
+            e.scaleY = 0.68;
+            if (e.hp <= 0) {
+              destroyFragile(e, actions, 24);
+              actions.addScore(500);
+              actions.unlockGates();
+              actions.emit('explode');
+              actions.triggerJuice(0.08, 0.6, '#fffaf0', 0.28);
+            } else {
+              e.vx = (e.vx >= 0 ? 1 : -1) * Math.min(86, Math.abs(e.vx) + 8);
+              actions.emit('stomp');
+              actions.triggerJuice(0.045, 0.34, '#ffd447', 0.14);
+              actions.spawnBurst(ecx, ecy, ['#ffd447', '#ff708d', '#fffaf0'], 10);
+            }
+          } else {
+            destroyFragile(e, actions, 12);
+            actions.emit('stomp');
+            actions.triggerJuice(0.04, 0.3, '#fffaf0', 0.14);
+          }
+        } else if (h.invuln <= 0 && h.dashTimer <= 0) {
           this.hearts--;
           h.invuln = 1.25;
           h.flash = 0.26;
@@ -567,7 +861,7 @@ export class WorldKernel {
 
       let hit = false;
       for (const e of this.entities) {
-        if (!e.alive || Math.hypot(sp.x - (e.x + 8), sp.y - (e.y + 8)) >= 11) continue;
+        if (!e.alive || Math.hypot(sp.x - (e.x + e.w * 0.5), sp.y - (e.y + e.h * 0.5)) >= 12) continue;
         if (e.tags.has('explosive') && primeExplosive(e, actions, 0.45)) {
           hit = true;
           break;
@@ -576,7 +870,7 @@ export class WorldKernel {
           hit = true;
           break;
         }
-        if (e.tags.has('stompable')) {
+        if (e.tags.has('stompable') && !e.tags.has('boss')) {
           e.flashTimer = 0.16;
           e.vx = sp.vx > 0 ? 75 : -75;
           e.vy = -120;
@@ -672,13 +966,33 @@ export class WorldKernel {
   }
 
   public snapshot(params: RuntimeParams): RenderSceneSnapshot {
+    const outTiles = this.tiles.slice();
+    for (const mp of this.movingPlatforms) {
+      for (let tx = 0; tx < mp.w; tx += 16) {
+        outTiles.push({
+          sprite: 'moving_plat',
+          x: mp.x + tx,
+          y: mp.y,
+          w: Math.min(16, mp.w - tx),
+          h: 16,
+        });
+      }
+    }
+
     const outEntities: EntityDesc[] = [];
     const lights: LightDesc[] = [];
     const glow = params.glowIntensity;
     const t = this.juice.visualTime;
+    let bossHp = 0;
+    let bossMaxHp = 0;
 
     for (const e of this.entities) {
       if (!e.alive) continue;
+      if (e.tags.has('boss')) {
+        bossHp = e.hp;
+        bossMaxHp = e.maxHp;
+      }
+
       let sprite = e.sprite;
       let yOffset = 0;
       if (e.archetype === 'star') {
@@ -686,8 +1000,8 @@ export class WorldKernel {
         yOffset = Math.sin(t * 4 + e.phase) * 2;
       } else if (e.archetype === 'slime') {
         sprite = Math.floor((t * 4 + e.phase) % 2) === 0 ? 'slime_a' : 'slime_b';
-      } else if (e.archetype === 'key') {
-        yOffset = Math.sin(t * 3.5) * 2.5;
+      } else if (e.archetype === 'key' || e.tags.has('relic') || e.archetype === 'coin') {
+        yOffset = Math.sin(t * 3.5 + e.phase) * 2.5;
       }
 
       outEntities.push({
@@ -702,6 +1016,7 @@ export class WorldKernel {
         anchorY: 1,
         flash: Math.min(1, e.flashTimer),
         flipX: e.flipX,
+        rot: e.tags.has('portal') ? t * 2.2 : undefined,
         tint: e.tags.has('burning') ? '#ffd447' : undefined,
       });
 
@@ -761,9 +1076,9 @@ export class WorldKernel {
       lights.push({
         x: h.x + 8,
         y: h.y + 8,
-        radius: this.ambientDarkness > 0.2 ? 46 : 30,
+        radius: this.ambientDarkness > 0.2 ? 48 : 30,
         color: this.ambientDarkness > 0.2 ? '#ffe6a3' : '#fff3d0',
-        intensity: (this.ambientDarkness > 0.2 ? 0.56 : 0.3) * glow,
+        intensity: (this.ambientDarkness > 0.2 ? 0.58 : 0.3) * glow,
         falloffPower: this.ambientDarkness > 0.2 ? 1.65 : 2.0,
       });
     }
@@ -771,7 +1086,7 @@ export class WorldKernel {
     let debugRects: DebugRectDesc[] | undefined;
     if (this.debugHitboxes) {
       debugRects = [];
-      for (const s of this.solids) {
+      for (const s of this.getSolidBoxes(false)) {
         debugRects.push({
           x: s.x,
           y: s.y,
@@ -808,8 +1123,8 @@ export class WorldKernel {
       hasKey: this.gateUnlocked,
       hearts: Math.max(0, this.hearts),
       maxHearts: this.maxHearts,
-      bossHp: 0,
-      bossMaxHp: 0,
+      bossHp,
+      bossMaxHp,
       cameraX: this.cameraX + this.juice.shakeX,
       cameraY: this.cameraY + this.juice.shakeY,
       ambientDarkness: this.ambientDarkness,
@@ -818,12 +1133,14 @@ export class WorldKernel {
       screenFlashColor: this.juice.flashColor,
       bgStars: this.bgStars,
       bgClouds: this.bgClouds,
-      tiles: this.tiles,
+      tiles: outTiles,
       entities: outEntities,
       particles: this.juice.particles,
       lights,
       debugRects,
-      statusBanner: this.statusBanner,
+      statusBanner: this.noticeTimer > 0 ? this.noticeBanner : this.statusBanner,
+      stage: this.stage,
+      bgmTheme: this.bgmTheme,
     };
   }
 }

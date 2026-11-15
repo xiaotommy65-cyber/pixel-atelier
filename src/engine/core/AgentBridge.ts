@@ -57,7 +57,7 @@ export function createAgentBridge(runner: CartridgeRunner): PixelAtelierAgentApi
       const k = getTurnKernel();
       if (!k) return { stepsExecuted: 0, snapshot: runner.getSnapshot() };
       let executed = 0;
-      const limit = Math.max(1, Math.min(300, Math.round(steps)));
+      const limit = Math.max(1, Math.min(2500, Math.round(steps)));
       for (let i = 0; i < limit; i++) {
         if (k.getStatus() !== 'playing') break;
         const obs = k.getObservation();

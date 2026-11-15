@@ -498,6 +498,11 @@
   transition: transform 120ms var(--ease-bounce);
 }
 
+.eject-btn.is-clear-save {
+  background: #ffe8ed;
+  color: #9e2645;
+}
+
 .eject-btn:active {
   transform: translateY(2px);
   box-shadow: 0 0 0 var(--ink);
@@ -526,6 +531,19 @@
   background: rgba(255, 255, 255, 0.1);
   padding: 2px 8px;
   border-radius: 999px;
+}
+
+.metric-tag.is-stage {
+  background: rgba(255, 212, 71, 0.22);
+  color: #ffe788;
+  font-weight: 800;
+}
+
+.overlay-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .screen-frame {

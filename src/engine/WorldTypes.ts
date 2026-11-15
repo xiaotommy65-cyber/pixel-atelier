@@ -15,6 +15,14 @@ export type SimEvent =
   | 'ignite'
   | 'snap';
 
+export type BgmTheme = 'meadow' | 'starlight' | 'dungeon' | 'boss';
+
+export interface StageProgressInfo {
+  index: number; // 1-based stage/floor index
+  total: number;
+  name: string;
+}
+
 export interface RpgMenuOption {
   id: string;
   label: string;
@@ -36,6 +44,11 @@ export interface RpgHudSnapshot {
   ac: number;
   potions: number;
   keys: number;
+  gold: number;
+  weaponName?: string;
+  armorName?: string;
+  relicName?: string;
+  statuses?: string[];
   agentAuto: boolean;
   combat?: {
     enemyName: string;
@@ -112,6 +125,7 @@ export interface TileDesc {
   w: number;
   h: number;
   tint?: string;
+  unlockable?: boolean;
 }
 
 export interface EntityDesc {
@@ -188,6 +202,7 @@ export interface RectBox {
   w: number;
   h: number;
   kind?: 'solid' | 'cloud';
+  unlockable?: boolean;
 }
 
 export interface RenderSceneSnapshot {
@@ -221,6 +236,8 @@ export interface RenderSceneSnapshot {
   lights: LightDesc[];
   debugRects?: DebugRectDesc[];
   statusBanner: string;
+  stage?: StageProgressInfo;
+  bgmTheme?: BgmTheme;
   rpgHud?: RpgHudSnapshot;
 }
 
@@ -229,6 +246,9 @@ export interface CartridgeInstance {
   snapshot(params: RuntimeParams): RenderSceneSnapshot;
   getStatus(): 'playing' | 'won' | 'lost';
   dispatchCommand?(commandId: string): SimEvent[];
+  serializeSave?(): unknown;
+  hydrateSave?(raw: unknown): boolean;
+  retryStage?(): void;
 }
 
 export const DEFAULT_RUNTIME_PARAMS: RuntimeParams = {

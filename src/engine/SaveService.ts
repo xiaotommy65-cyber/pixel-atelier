@@ -7,8 +7,16 @@ export interface CardRecord {
 }
 
 const RECORDS_KEY = 'pixel-atelier-records-v1';
+const SRAM_KEY = 'pixel-atelier-sram-v1';
 const SHELL_KEY = 'pixel-atelier-shell-v1';
 const HERO_KEY = 'pixel-atelier-hero-v1';
+
+export interface CartridgeSramEnvelope {
+  version: 1;
+  updatedAt: number;
+  stageName?: string;
+  data: unknown;
+}
 
 export interface HeroSpriteSave {
   a?: number[];
@@ -16,13 +24,15 @@ export interface HeroSpriteSave {
 }
 
 /**
- * Persistence boundary for player records, custom hero frames, and console preferences.
+ * Persistence boundary for player records, per-cartridge SRAM checkpoints, custom hero frames, and console preferences.
  */
 export class SaveService {
   private records: Partial<Record<CartridgeId, CardRecord>>;
+  private sram: Partial<Record<CartridgeId, CartridgeSramEnvelope>>;
 
   constructor() {
     this.records = this.readJson<Partial<Record<CartridgeId, CardRecord>>>(RECORDS_KEY) ?? {};
+    this.sram = this.readJson<Partial<Record<CartridgeId, CartridgeSramEnvelope>>>(SRAM_KEY) ?? {};
   }
 
   private readRaw(key: string): string | null {
@@ -59,6 +69,34 @@ export class SaveService {
 
   public getAllRecords(): Partial<Record<CartridgeId, CardRecord>> {
     return { ...this.records };
+  }
+
+  public hasCartridgeSram(id: CartridgeId): boolean {
+    const entry = this.sram[id];
+    return Boolean(entry && entry.version === 1 && entry.data !== undefined);
+  }
+
+  public getCartridgeSram(id: CartridgeId): CartridgeSramEnvelope | undefined {
+    const entry = this.sram[id];
+    if (!entry || entry.version !== 1) return undefined;
+    return entry;
+  }
+
+  public saveCartridgeSram(id: CartridgeId, data: unknown, stageName?: string): void {
+    if (data === undefined || data === null) return;
+    this.sram[id] = {
+      version: 1,
+      updatedAt: Date.now(),
+      stageName,
+      data,
+    };
+    this.writeRaw(SRAM_KEY, JSON.stringify(this.sram));
+  }
+
+  public clearCartridgeSram(id: CartridgeId): void {
+    if (!this.sram[id]) return;
+    delete this.sram[id];
+    this.writeRaw(SRAM_KEY, JSON.stringify(this.sram));
   }
 
   /**
