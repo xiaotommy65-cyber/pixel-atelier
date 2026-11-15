@@ -1,44 +1,11 @@
-import type { ToySynth } from '../audio/ToySynth.ts';
-import type { CartridgeRunner } from '../engine/CartridgeRunner.ts';
-import { DEFAULT_SANDBOX_SCRIPT } from '../engine/cartridges/sandboxToybox.ts';
+import { SANDBOX_DEFAULT_SCRIPT, WORKSHOP_RECIPES } from '../engine/CartridgeRegistry.ts';
+import type { EngineHost } from '../engine/EngineHost.ts';
 import { CARTRIDGE_PARAM_DEFS, DEFAULT_RUNTIME_PARAMS } from '../engine/WorldTypes.ts';
-
-const SCRIPT_RECIPES: { label: string; code: string }[] = [
-  {
-    label: '⭐ 黃金星雨配方',
-    code: `// 滿滿黃金星星與粉紫晚霞！
-api.setSky('#5979d6', '#ffd9e8');
-api.setHeroSpawn(30, 118);
-api.addCloud(70, 122, 3);
-api.addCloud(176, 94, 4);
-api.addStar(84, 98);
-api.addStar(118, 98);
-api.addStar(190, 70);
-api.addStar(224, 70);
-api.addStar(258, 70);
-api.addStar(284, 124);
-api.addSlime(152, 134);`,
-  },
-  {
-    label: '🍮 史萊姆派對',
-    code: `// 果凍史萊姆大遊行！踩扁牠們！
-api.setSky('#8ce0c4', '#fff5dc');
-api.setHeroSpawn(24, 120);
-api.addCloud(112, 114, 4);
-api.addStar(132, 90);
-api.addStar(166, 90);
-api.addSlime(96, 134);
-api.addSlime(156, 134);
-api.addSlime(216, 134);
-api.addSlime(276, 134);`,
-  },
-];
 
 export class WorkshopView {
   public readonly element: HTMLElement;
 
-  private runner: CartridgeRunner;
-  private synth: ToySynth;
+  private host: EngineHost;
   private onGoPlay?: () => void;
 
   private sliders = new Map<string, { input: HTMLInputElement; valEl: HTMLElement; unit: string }>();
@@ -46,10 +13,11 @@ export class WorkshopView {
   private codeBox: HTMLTextAreaElement;
   private errorBox: HTMLElement;
 
-  constructor(runner: CartridgeRunner, synth: ToySynth, onGoPlay?: () => void) {
-    this.runner = runner;
-    this.synth = synth;
+  constructor(host: EngineHost, onGoPlay?: () => void) {
+    this.host = host;
     this.onGoPlay = onGoPlay;
+
+    const runner = this.host.runner;
 
     this.element = document.createElement('section');
     this.element.className = 'studio-card';
@@ -58,8 +26,8 @@ export class WorkshopView {
     head.className = 'studio-head';
     head.innerHTML = `
       <div>
-        <h2>🧱 積木工房（即時物理手感＆關卡程式）</h2>
-        <p class="studio-sub">拖曳滑桿微調三款卡匣物理，或改寫右側秘密基地積木腳本後點「套用開玩」！</p>
+        <h2>🧱 積木工房（即時物理手感＆系統化關卡）</h2>
+        <p class="studio-sub">微調物理手感滑桿，或點選右側「連鎖爆破」「暗影地牢」積木配方後套用開玩！</p>
       </div>
     `;
     const resetBtn = document.createElement('button');
@@ -67,8 +35,8 @@ export class WorkshopView {
     resetBtn.className = 'toy-btn';
     resetBtn.textContent = '↺ 恢復原廠參數';
     resetBtn.addEventListener('click', () => {
-      this.synth.playPreset('snap');
-      const params = this.runner.getParams();
+      this.host.playUiSound('snap');
+      const params = runner.getParams();
       Object.assign(params, DEFAULT_RUNTIME_PARAMS);
       this.syncSliders();
     });
@@ -77,11 +45,11 @@ export class WorkshopView {
     const cols = document.createElement('div');
     cols.className = 'workshop-columns';
 
-    // Left: Physics & Glow Dials
+    // Left: Physics, Glow & Screen-Shake Dials
     const paramList = document.createElement('div');
     paramList.className = 'param-list';
 
-    const params = this.runner.getParams();
+    const params = runner.getParams();
     for (const def of CARTRIDGE_PARAM_DEFS) {
       const box = document.createElement('div');
       box.className = 'param-item';
@@ -103,7 +71,7 @@ export class WorkshopView {
       input.value = String(params[def.key]);
       input.addEventListener('input', () => {
         const num = Number(input.value);
-        this.runner.setParam(def.key, num);
+        runner.setParam(def.key, num);
         valEl.textContent = `${num}${def.unit}`;
       });
       this.sliders.set(def.key, { input, valEl, unit: def.unit });
@@ -126,7 +94,7 @@ export class WorkshopView {
     this.filterCheck.type = 'checkbox';
     this.filterCheck.checked = params.cozyFilter > 0.5;
     this.filterCheck.addEventListener('change', () => {
-      this.runner.setParam('cozyFilter', this.filterCheck.checked ? 1 : 0);
+      runner.setParam('cozyFilter', this.filterCheck.checked ? 1 : 0);
     });
     filterItem.append(filterText, this.filterCheck);
     paramList.appendChild(filterItem);
@@ -137,13 +105,13 @@ export class WorkshopView {
 
     const recipeRow = document.createElement('div');
     recipeRow.className = 'tool-row';
-    for (const r of SCRIPT_RECIPES) {
+    for (const r of WORKSHOP_RECIPES) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'toy-btn is-honey';
       btn.textContent = r.label;
       btn.addEventListener('click', () => {
-        this.synth.playPreset('snap');
+        this.host.playUiSound('snap');
         this.codeBox.value = r.code;
       });
       recipeRow.appendChild(btn);
@@ -153,14 +121,15 @@ export class WorkshopView {
     defaultBtn.className = 'toy-btn';
     defaultBtn.textContent = '📄 預設基地';
     defaultBtn.addEventListener('click', () => {
-      this.codeBox.value = DEFAULT_SANDBOX_SCRIPT;
+      this.host.playUiSound('snap');
+      this.codeBox.value = SANDBOX_DEFAULT_SCRIPT;
     });
     recipeRow.appendChild(defaultBtn);
 
     this.codeBox = document.createElement('textarea');
     this.codeBox.className = 'atelier-code';
     this.codeBox.spellcheck = false;
-    this.codeBox.value = this.runner.getSandboxScript();
+    this.codeBox.value = runner.getSandboxScript();
 
     this.errorBox = document.createElement('div');
     this.errorBox.className = 'script-error panel-hidden';
@@ -170,15 +139,15 @@ export class WorkshopView {
     applyBtn.className = 'toy-btn is-primary';
     applyBtn.textContent = '▶ 套用積木程式並切換到遊玩台';
     applyBtn.addEventListener('click', () => {
-      this.synth.unlock();
-      const err = this.runner.applySandboxScript(this.codeBox.value);
+      this.host.unlockAudio();
+      const err = runner.applySandboxScript(this.codeBox.value);
       if (err) {
         this.errorBox.textContent = `積木執行小錯誤：${err}`;
         this.errorBox.classList.remove('panel-hidden');
-        this.synth.playPreset('hurt');
+        this.host.playUiSound('hurt');
       } else {
         this.errorBox.classList.add('panel-hidden');
-        this.synth.playPreset('key');
+        this.host.playUiSound('key');
         this.onGoPlay?.();
       }
     });
@@ -189,25 +158,15 @@ export class WorkshopView {
   }
 
   private syncSliders(): void {
-    const params = this.runner.getParams();
-    for (const def of CARTRIDGES_KEY_HELPER(params, this.sliders)) {
-      void def;
+    const params = this.host.runner.getParams();
+    const keys = Object.keys(params) as (keyof typeof DEFAULT_RUNTIME_PARAMS)[];
+    for (const key of keys) {
+      const item = this.sliders.get(key);
+      if (item) {
+        item.input.value = String(params[key]);
+        item.valEl.textContent = `${params[key]}${item.unit}`;
+      }
     }
     this.filterCheck.checked = params.cozyFilter > 0.5;
   }
-}
-
-function CARTRIDGES_KEY_HELPER(
-  params: typeof DEFAULT_RUNTIME_PARAMS,
-  sliders: Map<string, { input: HTMLInputElement; valEl: HTMLElement; unit: string }>,
-): string[] {
-  const keys = Object.keys(params) as (keyof typeof DEFAULT_RUNTIME_PARAMS)[];
-  for (const key of keys) {
-    const item = sliders.get(key);
-    if (item) {
-      item.input.value = String(params[key]);
-      item.valEl.textContent = `${params[key]}${item.unit}`;
-    }
-  }
-  return keys;
 }

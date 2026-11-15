@@ -10,7 +10,14 @@ export type SimEvent =
   | 'laser'
   | 'key'
   | 'win'
-  | 'bounce';
+  | 'bounce'
+  | 'explode'
+  | 'ignite';
+
+export interface SimEventDetail {
+  kind: SimEvent;
+  combo?: number;
+}
 
 export interface InputState {
   left: boolean;
@@ -39,6 +46,7 @@ export interface RuntimeParams {
   glowIntensity: number;
   sparkleDensity: number;
   enemyCount: number;
+  shakeScale: number;
   cozyFilter: number; // 1 = subtle LCD scanline on, 0 = off
 }
 
@@ -71,6 +79,10 @@ export interface EntityDesc {
   y: number;
   w: number;
   h: number;
+  scaleX?: number;
+  scaleY?: number;
+  anchorY?: number; // 0 = top, 0.5 = center (default), 1 = feet bottom
+  flash?: number; // 0..1 white hit-flash in GPU shader
   flipX?: boolean;
   rot?: number;
   tint?: string;
@@ -100,6 +112,15 @@ export interface LightDesc {
   radius: number;
   color: string;
   intensity: number;
+  falloffPower?: number;
+}
+
+export interface DebugRectDesc {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
 }
 
 export interface BgCloudDesc {
@@ -136,6 +157,7 @@ export interface RenderSceneSnapshot {
   elapsedSec: number;
   status: 'playing' | 'won' | 'lost';
   score: number;
+  comboCount?: number;
   starsCollected: number;
   starsTotal: number;
   hasKey: boolean;
@@ -145,12 +167,17 @@ export interface RenderSceneSnapshot {
   bossMaxHp: number;
   cameraX: number;
   cameraY: number;
+  ambientDarkness?: number;
+  ambientColor?: string;
+  screenFlashAlpha?: number;
+  screenFlashColor?: string;
   bgStars: BgStarDesc[];
   bgClouds: BgCloudDesc[];
   tiles: TileDesc[];
   entities: EntityDesc[];
   particles: ParticleDesc[];
   lights: LightDesc[];
+  debugRects?: DebugRectDesc[];
   statusBanner: string;
 }
 
@@ -167,6 +194,7 @@ export const DEFAULT_RUNTIME_PARAMS: RuntimeParams = {
   glowIntensity: 1.0,
   sparkleDensity: 1.0,
   enemyCount: 3,
+  shakeScale: 1.0,
   cozyFilter: 1,
 };
 
@@ -176,5 +204,6 @@ export const CARTRIDGE_PARAM_DEFS: CartridgeParamDef[] = [
   { key: 'jumpPower', label: '跳躍彈力', min: 160, max: 290, step: 10, defaultValue: 220, unit: '' },
   { key: 'glowIntensity', label: 'GPU 光暈強度', min: 0, max: 1.8, step: 0.1, defaultValue: 1.0, unit: 'x' },
   { key: 'sparkleDensity', label: '星星特效粒子', min: 0.2, max: 2.0, step: 0.2, defaultValue: 1.0, unit: 'x' },
+  { key: 'shakeScale', label: '震動打擊回饋', min: 0, max: 1.5, step: 0.25, defaultValue: 1.0, unit: 'x' },
   { key: 'enemyCount', label: '秘密基地怪物數', min: 0, max: 8, step: 1, defaultValue: 3, unit: '隻' },
 ];

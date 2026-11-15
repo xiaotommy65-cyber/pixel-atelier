@@ -1,5 +1,9 @@
 import { CartridgeRunner, STEP_DT } from '../src/engine/CartridgeRunner.ts';
 import type { InputState } from '../src/engine/WorldTypes.ts';
+import { InputMap } from '../src/engine/core/InputMap.ts';
+import { JuiceSystem } from '../src/engine/core/JuiceSystem.ts';
+import { SeededRng } from '../src/engine/core/SeededRng.ts';
+import { WORKSHOP_RECIPES } from '../src/engine/CartridgeRegistry.ts';
 
 function check(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(`Simulation assertion failed: ${msg}`);
@@ -15,6 +19,37 @@ function emptyInput(): InputState {
     action: false,
     restart: false,
   };
+}
+
+function testCoreSubsystems() {
+  // 1. SeededRng determinism
+  const a = new SeededRng(42);
+  const b = new SeededRng(42);
+  for (let i = 0; i < 10; i++) {
+    check(a.next() === b.next(), 'SeededRng should produce identical sequences for identical seeds');
+  }
+
+  // 2. InputMap edge detection & buffer
+  const map = new InputMap();
+  map.update({ ...emptyInput(), jump: true }, STEP_DT);
+  check(map.justPressed('jump'), 'InputMap should fire justPressed on first held frame');
+  check(map.hasBuffered('jump'), 'InputMap should prime action buffer on press');
+  map.update({ ...emptyInput(), jump: true }, STEP_DT);
+  check(!map.justPressed('jump'), 'InputMap justPressed should clear on second held frame');
+  map.update(emptyInput(), STEP_DT);
+  check(map.justReleased('jump'), 'InputMap should fire justReleased on release frame');
+
+  // 3. JuiceSystem Hitstop & Trauma^2 decay
+  const juice = new JuiceSystem();
+  juice.triggerHitstop(0.05);
+  juice.addTrauma(0.8);
+  const dtFrozen = juice.advanceRealTime(0.02, 1.0);
+  check(dtFrozen === 0, 'JuiceSystem hitstop should freeze simDt while active');
+  check(Math.hypot(juice.shakeX, juice.shakeY) >= 0, 'Trauma^2 shake remains active during hitstop');
+  juice.advanceRealTime(0.05, 1.0);
+  const dtResumed = juice.advanceRealTime(0.02, 1.0);
+  check(dtResumed > 0, 'JuiceSystem simDt resumes after hitstop expires');
+  console.log('[SIM OK] core subsystems (SeededRng, InputMap, JuiceSystem Hitstop/Trauma^2)');
 }
 
 function testCloudberryHop() {
@@ -61,6 +96,46 @@ function testSugarStarlight() {
   );
 }
 
+function testSystemicChainReactionAndDungeon() {
+  const runner = new CartridgeRunner('sandbox-toybox');
+  runner.setParam('enemyCount', 0);
+  const err = runner.applySandboxScript(`
+    api.setSky('#141026', '#2a1d42');
+    api.setDarkness(0.75, '#0d091c');
+    api.setHeroSpawn(40, 120);
+    api.addTorch(24, 134);
+    api.addBomb(86, 134);
+    api.addBomb(110, 134);
+    api.addCrate(128, 134);
+    api.addSwitch(132, 134);
+    api.addGate(180, 134);
+  `);
+  check(err === null, 'Systemic dungeon script should evaluate cleanly');
+
+  const eventsSeen = new Set<string>();
+  for (let frame = 0; frame < 150; frame++) {
+    const inp = emptyInput();
+    if (frame === 15) inp.action = true; // Toss igniting spark at bomb #1 -> triggers bomb #2 -> destroys crate & triggers switch!
+    const evs = runner.stepFixed(STEP_DT, inp);
+    for (const ev of evs) eventsSeen.add(ev);
+  }
+
+  const snap = runner.getSnapshot();
+  check(eventsSeen.has('ignite'), 'Action spark should ignite bomb fuse');
+  check(eventsSeen.has('explode'), 'Ignited bomb should detonate and chain-react');
+  check(snap.hasKey, 'Blast / crate should activate floor switch and unlock gate');
+  check((snap.ambientDarkness ?? 0) > 0.7, 'Dark dungeon ambient veil should be preserved in snapshot');
+  console.log(
+    `[SIM OK] systemic dungeon chain reaction -> events=[${Array.from(eventsSeen).join(',')}], gateUnlocked=${snap.hasKey}, darkness=${snap.ambientDarkness}`,
+  );
+
+  // Verify all Workshop recipes parse without error
+  for (const recipe of WORKSHOP_RECIPES) {
+    const rErr = runner.applySandboxScript(recipe.code);
+    check(rErr === null, `Workshop recipe "${recipe.label}" should have zero script errors`);
+  }
+}
+
 function testSandboxAndGpuBenchmark() {
   const runner = new CartridgeRunner('sandbox-toybox');
   const err = runner.applySandboxScript(`
@@ -91,7 +166,9 @@ function testSandboxAndGpuBenchmark() {
   );
 }
 
+testCoreSubsystems();
 testCloudberryHop();
 testSugarStarlight();
+testSystemicChainReactionAndDungeon();
 testSandboxAndGpuBenchmark();
-console.log('[SIM ALL PASSED] Pixel Atelier deterministic simulation & GPU batch check passed!');
+console.log('[SIM ALL PASSED] Pixel Atelier deterministic simulation, systemic rules & GPU batch check passed!');

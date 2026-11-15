@@ -1,6 +1,5 @@
-import type { ToySynth } from '../audio/ToySynth.ts';
 import { CARTRIDGES, getCartridgeMeta } from '../engine/CartridgeRegistry.ts';
-import type { CartridgeRunner } from '../engine/CartridgeRunner.ts';
+import type { EngineHost } from '../engine/EngineHost.ts';
 import type { CartridgeId, InputState, RenderSceneSnapshot } from '../engine/WorldTypes.ts';
 import type { GpuFrameStats } from '../gpu/GpuTypes.ts';
 import type { TextureAtlas } from '../gpu/TextureAtlas.ts';
@@ -8,15 +7,8 @@ import { renderCardArt } from './CardArt.ts';
 
 export type ConsolePhase = 'empty' | 'booting' | 'running';
 
-interface CardRecord {
-  bestScore: number;
-  bestStars: number;
-  starsTotal: number;
-}
-
 const BOOT_SEC = 1.35;
 const SLOT_CARD_W = 46;
-const RECORDS_KEY = 'pixel-atelier-records-v1';
 const DEFAULT_SLOT_HINT = '◀ 卡槽：把下面的卡匣拖進來！';
 
 type Dir = 'left' | 'right' | 'up' | 'down';
@@ -32,15 +24,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return node;
 }
 
-function loadRecords(): Partial<Record<CartridgeId, CardRecord>> {
-  try {
-    const raw = localStorage.getItem(RECORDS_KEY);
-    return raw ? (JSON.parse(raw) as Partial<Record<CartridgeId, CardRecord>>) : {};
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Switch-style handheld: Joy-Con (L) | screen body | Joy-Con (R),
  * with a top cartridge slot and a game card case you tap or drag cards from.
@@ -49,10 +32,8 @@ export class ConsoleView {
   public readonly element: HTMLElement;
   public readonly canvas: HTMLCanvasElement;
 
-  private runner: CartridgeRunner;
-  private synth: ToySynth;
+  private host: EngineHost;
   private atlas: TextureAtlas;
-  private onMomoReact?: () => void;
 
   private phase: ConsolePhase = 'empty';
   private inserted: CartridgeId | null = null;
@@ -67,7 +48,6 @@ export class ConsoleView {
   private cardEls = new Map<CartridgeId, HTMLElement>();
   private cardArtImgs = new Map<CartridgeId, HTMLImageElement[]>();
   private recordEls = new Map<CartridgeId, HTMLElement>();
-  private records: Partial<Record<CartridgeId, CardRecord>> = loadRecords();
   private slotEl: HTMLElement;
   private slotLed: HTMLElement;
   private slotWindow: HTMLElement;
@@ -91,11 +71,9 @@ export class ConsoleView {
   private keyInput = blankInput();
   private stickInput: Record<Dir, boolean> = { left: false, right: false, up: false, down: false };
 
-  constructor(runner: CartridgeRunner, synth: ToySynth, atlas: TextureAtlas, onMomoReact?: () => void) {
-    this.runner = runner;
-    this.synth = synth;
+  constructor(host: EngineHost, atlas: TextureAtlas) {
+    this.host = host;
     this.atlas = atlas;
-    this.onMomoReact = onMomoReact;
 
     this.element = el('section', 'switch-stage');
     const consoleEl = el('div', 'switch-console');
@@ -179,9 +157,8 @@ export class ConsoleView {
     const replayBtn = el('button', 'toy-btn is-primary', '✨ 再玩一次！');
     replayBtn.type = 'button';
     replayBtn.addEventListener('click', () => {
-      this.synth.unlock();
-      this.synth.playPreset('snap');
-      this.runner.restart();
+      this.host.playUiSound('snap');
+      this.host.runner.restart();
     });
     card.append(this.resultTitle, this.resultDesc, replayBtn);
     this.resultOverlay.appendChild(card);
@@ -196,7 +173,7 @@ export class ConsoleView {
       speakerL.appendChild(el('span'));
       speakerR.appendChild(el('span'));
     }
-    const legend = el('div', 'body-legend', 'B 跳躍 · A 星光 · X 精靈派對 · + 重開 · ⌂ 退卡 · ◉ 截圖');
+    const legend = el('div', 'body-legend', 'B 跳躍 · A 火花 · X 精靈派對 · F3 碰撞框 · + 重開 · ⌂ 退卡');
     this.benchBtn = el('button', 'bench-btn', '✨ 1,150+ GPU 精靈派對');
     this.benchBtn.type = 'button';
     this.benchBtn.addEventListener('click', () => this.toggleBenchmark());
@@ -212,9 +189,8 @@ export class ConsoleView {
     plusBtn.type = 'button';
     plusBtn.title = '+ 重新開始這張卡匣';
     plusBtn.addEventListener('click', () => {
-      this.synth.unlock();
-      this.synth.playPreset('snap');
-      if (this.phase !== 'empty') this.runner.restart();
+      this.host.playUiSound('snap');
+      if (this.phase !== 'empty') this.host.runner.restart();
     });
     rTop.appendChild(plusBtn);
 
@@ -226,7 +202,7 @@ export class ConsoleView {
     abxy.append(
       xBtn,
       this.holdButton('dia-btn is-y dia-w', 'Y', 'jump', 'Y：跳躍'),
-      this.holdButton('dia-btn is-a dia-e', 'A', 'action', 'A：星光 / 特技'),
+      this.holdButton('dia-btn is-a dia-e', 'A', 'action', 'A：火花 / 引爆 / 特技'),
       this.holdButton('dia-btn is-b dia-s', 'B', 'jump', 'B：跳躍 / 發射'),
     );
     const rStick = this.buildStick();
@@ -325,8 +301,7 @@ export class ConsoleView {
   }
 
   public requestCapture(): void {
-    this.synth.unlock();
-    this.synth.playPreset('snap');
+    this.host.playUiSound('snap');
     this.captureRequested = true;
     const flash = el('div', 'capture-flash');
     this.screenFrame.appendChild(flash);
@@ -356,8 +331,7 @@ export class ConsoleView {
   public insertCartridge(id: CartridgeId, instant = false): void {
     if (this.busy) return;
     if (this.inserted === id) {
-      // Same card: just reboot it.
-      this.runner.switchCartridge(id);
+      this.host.runner.switchCartridge(id);
       this.startBoot(id);
       return;
     }
@@ -368,12 +342,11 @@ export class ConsoleView {
         src.classList.add('is-out');
         this.inserted = id;
         this.mountSlotCard(id);
-        this.runner.switchCartridge(id);
+        this.host.runner.switchCartridge(id);
         this.startBoot(id);
         this.busy = false;
       };
-      this.synth.unlock();
-      this.synth.playPreset('snap');
+      this.host.playUiSound('snap');
       if (instant) {
         src.style.transform = '';
         finish();
@@ -393,8 +366,7 @@ export class ConsoleView {
       after?.();
       return;
     }
-    this.synth.unlock();
-    this.synth.playPreset('bounce');
+    this.host.playUiSound('bounce');
     this.inserted = null;
     this.phase = 'empty';
     this.bootLayer?.remove();
@@ -423,13 +395,14 @@ export class ConsoleView {
   }
 
   public updateHud(snap: RenderSceneSnapshot, stats: GpuFrameStats, fps: number): void {
-    this.scoreTag.textContent = `分數 ${snap.score}`;
+    const comboStr = snap.comboCount && snap.comboCount > 1 ? ` · ×${snap.comboCount}` : '';
+    this.scoreTag.textContent = `分數 ${snap.score}${comboStr}`;
     this.starTag.textContent = `★ ${snap.starsCollected}/${snap.starsTotal}`;
     this.updateStats(stats, fps);
     this.statusHintEl.textContent = snap.statusBanner;
 
-    if (this.inserted) {
-      this.saveRecord(this.inserted, snap);
+    if (this.inserted && this.host.saveRecord(this.inserted, snap)) {
+      this.renderRecordBadge(this.inserted);
     }
 
     if (snap.status !== this.lastBannerState) {
@@ -438,7 +411,7 @@ export class ConsoleView {
         this.resultTitle.textContent = '🎉 太棒了！卡匣過關！';
         this.resultDesc.textContent = `本次分數 ${snap.score} 分，Momo 開心到在卡槽旁邊跳舞！`;
         this.resultOverlay.classList.remove('panel-hidden');
-        this.onMomoReact?.();
+        this.host.reactMomo();
       } else if (snap.status === 'lost') {
         this.resultTitle.textContent = '💫 愛心用完囉～';
         this.resultDesc.textContent = '再挑戰一次，或去積木工房把重力調輕一點！';
@@ -470,31 +443,13 @@ export class ConsoleView {
   private renderRecordBadge(id: CartridgeId): void {
     const badge = this.recordEls.get(id);
     if (!badge) return;
-    const rec = this.records[id];
+    const rec = this.host.getRecord(id);
     if (!rec) {
       badge.textContent = 'NEW';
       badge.classList.remove('is-played');
     } else {
       badge.textContent = `★${rec.bestStars}/${rec.starsTotal} · ${rec.bestScore}`;
       badge.classList.add('is-played');
-    }
-  }
-
-  private saveRecord(id: CartridgeId, snap: RenderSceneSnapshot): void {
-    const prev = this.records[id];
-    const next: CardRecord = {
-      bestScore: Math.max(prev?.bestScore ?? 0, snap.score),
-      bestStars: Math.max(prev?.bestStars ?? 0, snap.starsCollected),
-      starsTotal: Math.max(prev?.starsTotal ?? 0, snap.starsTotal),
-    };
-    if (!prev || next.bestScore !== prev.bestScore || next.bestStars !== prev.bestStars || next.starsTotal !== prev.starsTotal) {
-      this.records[id] = next;
-      this.renderRecordBadge(id);
-      try {
-        localStorage.setItem(RECORDS_KEY, JSON.stringify(this.records));
-      } catch {
-        // Ignore storage quota errors
-      }
     }
   }
 
@@ -536,8 +491,8 @@ export class ConsoleView {
     boot.append(art, el('h3', 'boot-title', meta.title), el('span', 'boot-brand', 'PIXEL ATELIER · GAME CARD'), bar);
     this.screenFrame.appendChild(boot);
     this.bootLayer = boot;
-    this.synth.playPreset('key');
-    this.onMomoReact?.();
+    this.host.playUiSound('key');
+    this.host.reactMomo();
   }
 
   private showEmptyState(): void {
@@ -612,7 +567,7 @@ export class ConsoleView {
     card.addEventListener('pointerdown', (e) => {
       if (this.busy || card.classList.contains('is-out')) return;
       e.preventDefault();
-      this.synth.unlock();
+      this.host.unlockAudio();
       const sx = e.clientX;
       const sy = e.clientY;
       let dragging = false;
@@ -660,12 +615,11 @@ export class ConsoleView {
   }
 
   private toggleBenchmark(): void {
-    this.synth.unlock();
-    this.synth.playPreset('star');
-    const on = this.runner.toggleBenchmark();
+    this.host.playUiSound('star');
+    const on = this.host.runner.toggleBenchmark();
     this.benchBtn.classList.toggle('is-on', on);
     this.benchBtn.textContent = on ? '🎉 派對中 1,150+ 精靈' : '✨ 1,150+ GPU 精靈派對';
-    this.onMomoReact?.();
+    this.host.reactMomo();
   }
 
   private holdButton(cls: string, label: string, key: keyof InputState, title: string): HTMLButtonElement {
@@ -674,7 +628,7 @@ export class ConsoleView {
     btn.title = title;
     const press = (e: Event) => {
       e.preventDefault();
-      this.synth.unlock();
+      this.host.unlockAudio();
       this.touchInput[key] = true;
       btn.classList.add('is-pressed');
     };
@@ -723,7 +677,7 @@ export class ConsoleView {
 
     base.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.synth.unlock();
+      this.host.unlockAudio();
       pid = e.pointerId;
       base.setPointerCapture(e.pointerId);
       base.classList.add('is-active');
@@ -773,6 +727,12 @@ export class ConsoleView {
         case 'KeyR':
           k.restart = down;
           break;
+        case 'F3':
+          if (down && !e.repeat) {
+            const on = this.host.runner.toggleDebugHitboxes();
+            this.showCaptureToast(on ? '🧪 除錯碰撞框：開啟' : '🧪 除錯碰撞框：關閉');
+          }
+          break;
         case 'Digit1':
         case 'Digit2':
         case 'Digit3':
@@ -788,7 +748,7 @@ export class ConsoleView {
           matched = false;
       }
       if (matched) {
-        if (down) this.synth.unlock();
+        if (down) this.host.unlockAudio();
         e.preventDefault();
       }
     };

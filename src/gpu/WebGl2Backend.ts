@@ -38,6 +38,8 @@ out vec2 vTexUv;
 out vec2 vLocalUv;
 out vec4 vTint;
 out float vMode;
+out float vFlash;
+out float vParam;
 
 void main() {
   vec2 quad[6] = vec2[6](
@@ -64,6 +66,8 @@ void main() {
   vLocalUv = u01;
   vTint = aTint;
   vMode = aExtra.y;
+  vFlash = aExtra.z;
+  vParam = aExtra.w;
 }`;
 
 const SPRITE_FS = `#version 300 es
@@ -72,22 +76,28 @@ in vec2 vTexUv;
 in vec2 vLocalUv;
 in vec4 vTint;
 in float vMode;
+in float vFlash;
+in float vParam;
 uniform sampler2D uAtlas;
 out vec4 fragColor;
 void main() {
   if (vMode > 1.5) {
-    fragColor = vTint;
+    vec3 solidRgb = mix(vTint.rgb, vec3(1.0), clamp(vFlash, 0.0, 1.0));
+    fragColor = vec4(solidRgb, vTint.a);
     return;
   }
   if (vMode > 0.5) {
     float d = length(vLocalUv * 2.0 - vec2(1.0));
     float f = clamp(1.0 - d, 0.0, 1.0);
-    fragColor = vec4(vTint.rgb, vTint.a * f * f);
+    float power = vParam > 0.1 ? vParam : 2.0;
+    fragColor = vec4(vTint.rgb, vTint.a * pow(f, power));
     return;
   }
   vec4 sampled = texture(uAtlas, vTexUv);
   if (sampled.a < 0.05) discard;
-  fragColor = vec4(sampled.rgb * vTint.rgb, sampled.a * vTint.a);
+  vec3 baseRgb = sampled.rgb * vTint.rgb;
+  vec3 finalRgb = mix(baseRgb, vec3(1.0), clamp(vFlash, 0.0, 1.0));
+  fragColor = vec4(finalRgb, sampled.a * vTint.a);
 }`;
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {

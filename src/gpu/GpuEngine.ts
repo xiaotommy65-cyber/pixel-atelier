@@ -130,6 +130,8 @@ export class GpuEngine {
     a: number,
     rot: number,
     mode: number,
+    flash = 0,
+    param = 0,
   ): void {
     const arr = additive ? this.addItems : this.alphaItems;
     const count = additive ? this.addCount : this.alphaCount;
@@ -150,8 +152,8 @@ export class GpuEngine {
     arr[base + 11] = a;
     arr[base + 12] = rot;
     arr[base + 13] = mode;
-    arr[base + 14] = 0;
-    arr[base + 15] = 0;
+    arr[base + 14] = flash;
+    arr[base + 15] = param;
 
     if (additive) this.addCount++;
     else this.alphaCount++;
@@ -168,6 +170,7 @@ export class GpuEngine {
       rot?: number;
       tint?: string;
       alpha?: number;
+      flash?: number;
       additive?: boolean;
     },
   ): void {
@@ -194,6 +197,8 @@ export class GpuEngine {
       opts?.alpha ?? 1,
       opts?.rot ?? 0,
       0,
+      opts?.flash ?? 0,
+      0,
     );
   }
 
@@ -206,16 +211,24 @@ export class GpuEngine {
     alpha = 1,
     rot = 0,
     additive = false,
+    flash = 0,
   ): void {
     const [r, g, b] = hexToRgb01(colorHex);
     this.spriteTotal++;
-    this.pushInstance(additive, x, y, w, h, 0, 0, 1, 1, r, g, b, alpha, rot, 2);
+    this.pushInstance(additive, x, y, w, h, 0, 0, 1, 1, r, g, b, alpha, rot, 2, flash, 0);
   }
 
-  public drawLight(x: number, y: number, radius: number, colorHex: string, intensity = 0.45): void {
+  public drawLight(
+    x: number,
+    y: number,
+    radius: number,
+    colorHex: string,
+    intensity = 0.45,
+    falloffPower = 2.0,
+  ): void {
     const [r, g, b] = hexToRgb01(colorHex);
     this.lightTotal++;
-    this.pushInstance(true, x, y, radius * 2, radius * 2, 0, 0, 1, 1, r, g, b, intensity, 0, 1);
+    this.pushInstance(true, x, y, radius * 2, radius * 2, 0, 0, 1, 1, r, g, b, intensity, 0, 1, 0, falloffPower);
   }
 
   public flush(timeSec: number): GpuFrameStats {

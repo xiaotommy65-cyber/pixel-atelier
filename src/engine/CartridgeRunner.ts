@@ -1,7 +1,6 @@
 import { GAME_H, GAME_W } from '../gpu/GpuTypes.ts';
-import { CloudberryHopGame } from './cartridges/cloudberryHop.ts';
-import { DEFAULT_SANDBOX_SCRIPT, SandboxToyboxGame } from './cartridges/sandboxToybox.ts';
-import { SugarStarlightGame } from './cartridges/sugarStarlight.ts';
+import { createCartridgeInstance, SANDBOX_DEFAULT_SCRIPT } from './CartridgeRegistry.ts';
+import { SandboxToyboxGame } from './cartridges/sandboxToybox.ts';
 import type {
   CartridgeId,
   CartridgeInstance,
@@ -9,6 +8,7 @@ import type {
   RenderSceneSnapshot,
   RuntimeParams,
   SimEvent,
+  SimEventDetail,
 } from './WorldTypes.ts';
 import { DEFAULT_RUNTIME_PARAMS } from './WorldTypes.ts';
 
@@ -31,10 +31,11 @@ export class CartridgeRunner {
   private cartridgeId: CartridgeId = 'cloudberry-hop';
   private instance: CartridgeInstance;
   private params: RuntimeParams = { ...DEFAULT_RUNTIME_PARAMS };
-  private sandboxScript = DEFAULT_SANDBOX_SCRIPT;
+  private sandboxScript = SANDBOX_DEFAULT_SCRIPT;
   private accumulator = 0;
-  private eventListener?: (ev: SimEvent) => void;
+  private eventListener?: (ev: SimEvent, detail: SimEventDetail) => void;
   private prevRestart = false;
+  private debugHitboxes = false;
 
   public sparkleBenchmark = false;
   public benchmarkSprites: BenchmarkSprite[] = [];
@@ -45,22 +46,28 @@ export class CartridgeRunner {
   }
 
   private createInstance(id: CartridgeId): CartridgeInstance {
-    switch (id) {
-      case 'cloudberry-hop':
-        return new CloudberryHopGame();
-      case 'sugar-starlight':
-        return new SugarStarlightGame();
-      case 'sandbox-toybox':
-        return new SandboxToyboxGame(this.sandboxScript, this.params);
-    }
+    const inst = createCartridgeInstance(id, {
+      sandboxScript: this.sandboxScript,
+      params: this.params,
+    });
+    const maybeDebug = inst as CartridgeInstance & { setDebugHitboxes?: (b: boolean) => void };
+    maybeDebug.setDebugHitboxes?.(this.debugHitboxes);
+    return inst;
   }
 
-  public setEventListener(listener: (ev: SimEvent) => void): void {
+  public setEventListener(listener: (ev: SimEvent, detail: SimEventDetail) => void): void {
     this.eventListener = listener;
   }
 
   public getCartridgeId(): CartridgeId {
     return this.cartridgeId;
+  }
+
+  public toggleDebugHitboxes(force?: boolean): boolean {
+    this.debugHitboxes = force ?? !this.debugHitboxes;
+    const maybeDebug = this.instance as CartridgeInstance & { setDebugHitboxes?: (b: boolean) => void };
+    maybeDebug.setDebugHitboxes?.(this.debugHitboxes);
+    return this.debugHitboxes;
   }
 
   public switchCartridge(id: CartridgeId): void {
@@ -99,10 +106,10 @@ export class CartridgeRunner {
   public applySandboxScript(code: string): string | null {
     this.sandboxScript = code;
     this.cartridgeId = 'sandbox-toybox';
-    const sb = new SandboxToyboxGame(this.sandboxScript, this.params);
+    const sb = this.createInstance('sandbox-toybox') as SandboxToyboxGame;
     this.instance = sb;
     this.accumulator = 0;
-    return sb.scriptError;
+    return sb.scriptError ?? null;
   }
 
   public toggleBenchmark(force?: boolean): boolean {
@@ -146,8 +153,11 @@ export class CartridgeRunner {
 
   public stepFixed(dt: number, input: InputState): SimEvent[] {
     const events = this.instance.step(dt, input, this.params);
+    const maybeCombo = this.instance as CartridgeInstance & { getComboCount?: () => number };
+    const combo = maybeCombo.getComboCount?.() ?? 0;
+
     for (const ev of events) {
-      this.eventListener?.(ev);
+      this.eventListener?.(ev, { kind: ev, combo });
     }
 
     if (this.sparkleBenchmark) {

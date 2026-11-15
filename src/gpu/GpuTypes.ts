@@ -29,6 +29,8 @@ export interface BatchDrawItem {
   a: number;
   rot: number;
   mode: number; // 0 = sprite, 1 = radial light, 2 = solid quad
+  flash?: number; // 0..1 white hit-flash
+  param?: number; // extra per-mode shader parameter (e.g. radial softness)
   additive: boolean;
 }
 

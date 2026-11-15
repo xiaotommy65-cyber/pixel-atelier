@@ -37,6 +37,7 @@ export class SceneGpuBridge {
     gpu.drawSprite(mood, cx, cy + bob, { w: 48, h: 48 });
     return gpu.flush(timeSec);
   }
+
   public render(
     gpu: GpuEngine,
     snap: RenderSceneSnapshot,
@@ -75,28 +76,44 @@ export class SceneGpuBridge {
       gpu.drawSprite(t.sprite, sx + t.w * 0.5, sy + t.h * 0.5, { w: t.w, h: t.h, tint: t.tint });
     }
 
-    // 4. Entities (center-anchored)
+    // 4. Entities (supports foot-pivot squash & stretch and per-sprite white hit-flash)
     for (const e of snap.entities) {
+      const sw = e.w * (e.scaleX ?? 1);
+      const sh = e.h * (e.scaleY ?? 1);
+      const anchorY = e.anchorY ?? 0.5;
       const sx = Math.round(e.x - camX + e.w * 0.5);
-      const sy = Math.round(e.y - camY + e.h * 0.5);
-      if (sx < -32 || sx > GAME_W + 32) continue;
+      const sy = Math.round(e.y - camY + e.h * anchorY + sh * (0.5 - anchorY));
+      if (sx < -36 || sx > GAME_W + 36) continue;
       gpu.drawSprite(e.sprite, sx, sy, {
-        w: e.w,
-        h: e.h,
+        w: sw,
+        h: sh,
         flipX: e.flipX,
         rot: e.rot,
         tint: e.tint,
         alpha: e.alpha,
+        flash: e.flash,
         additive: e.additive,
       });
     }
 
-    // 5. Additive Radial GPU Lights (smooth radial gradient)
+    // 4b. Ambient darkness tint veil before additive torchlights & HUD
+    if (snap.ambientDarkness && snap.ambientDarkness > 0.01) {
+      gpu.drawRect(
+        GAME_W * 0.5,
+        GAME_H * 0.5,
+        GAME_W,
+        GAME_H,
+        snap.ambientColor ?? '#120e24',
+        Math.min(0.88, snap.ambientDarkness),
+      );
+    }
+
+    // 5. Additive Radial GPU Lights (punches bright pools over darkness)
     for (const l of snap.lights) {
       const lx = l.x - camX;
       const ly = l.y - camY;
-      if (lx < -64 || lx > GAME_W + 64) continue;
-      gpu.drawLight(lx, ly, l.radius, l.color, l.intensity);
+      if (lx < -72 || lx > GAME_W + 72) continue;
+      gpu.drawLight(lx, ly, l.radius, l.color, l.intensity, l.falloffPower ?? 2.0);
     }
 
     // 6. Gameplay Sparkles & Confetti Particles
@@ -133,7 +150,28 @@ export class SceneGpuBridge {
       }
     }
 
-    // 8. In-Screen Pixel HUD (Hearts top-left, Key/Stars top-right, Boss Bar top-center)
+    // 8. Optional Debug Hitbox Overlay (F3 toggle)
+    if (snap.debugRects) {
+      for (const r of snap.debugRects) {
+        const rx = Math.round(r.x - camX + r.w * 0.5);
+        const ry = Math.round(r.y - camY + r.h * 0.5);
+        gpu.drawRect(rx, ry, r.w, r.h, r.color, 0.28);
+      }
+    }
+
+    // 9. Screen impact flash overlay (kept gentle & brief)
+    if (snap.screenFlashAlpha && snap.screenFlashAlpha > 0.01) {
+      gpu.drawRect(
+        GAME_W * 0.5,
+        GAME_H * 0.5,
+        GAME_W,
+        GAME_H,
+        snap.screenFlashColor ?? '#fffaf0',
+        Math.min(0.42, snap.screenFlashAlpha),
+      );
+    }
+
+    // 10. In-Screen Pixel HUD (Hearts top-left, Key/Stars top-right, Boss Bar top-center)
     for (let i = 0; i < snap.maxHearts; i++) {
       gpu.drawSprite(i < snap.hearts ? 'heart_full' : 'heart_empty', 12 + i * 13, 11, {
         w: 11,

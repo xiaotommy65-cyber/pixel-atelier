@@ -4,8 +4,9 @@ import './styles/switch.css';
 import { ToySynth } from './audio/ToySynth.ts';
 import { getCartridgeMeta } from './engine/CartridgeRegistry.ts';
 import { CartridgeRunner } from './engine/CartridgeRunner.ts';
+import { EngineHost } from './engine/EngineHost.ts';
+import { SaveService } from './engine/SaveService.ts';
 import { SceneGpuBridge } from './engine/SceneGpuBridge.ts';
-import type { SimEvent } from './engine/WorldTypes.ts';
 import { GpuEngine } from './gpu/GpuEngine.ts';
 import type { GpuBackendKind } from './gpu/GpuTypes.ts';
 import { TextureAtlas } from './gpu/TextureAtlas.ts';
@@ -18,8 +19,6 @@ import { WorkshopView } from './ui/WorkshopView.ts';
 
 type StationId = 'play' | 'sprite' | 'workshop' | 'synth';
 type ShellTheme = 'mint' | 'berry' | 'honey' | 'sky';
-
-const SHELL_STORAGE_KEY = 'pixel-atelier-shell-v1';
 
 const SHELL_THEMES: { id: ShellTheme; label: string; left: string; right: string }[] = [
   { id: 'mint', label: '薄荷 × 草莓', left: '#7fdcb4', right: '#ff8fa8' },
@@ -41,13 +40,14 @@ function createApp() {
 
   const synth = new ToySynth();
   const runner = new CartridgeRunner('cloudberry-hop');
+  const save = new SaveService();
   const bridge = new SceneGpuBridge();
 
   const shell = document.createElement('div');
   shell.className = 'atelier-shell';
 
-  // Restore saved handheld colorway
-  const savedShell = (localStorage.getItem(SHELL_STORAGE_KEY) as ShellTheme | null) ?? 'mint';
+  // Restore saved handheld colorway via SaveService
+  const savedShell = save.getShellTheme('mint') as ShellTheme;
   let activeShell: ShellTheme = SHELL_THEMES.some((t) => t.id === savedShell) ? savedShell : 'mint';
   if (activeShell !== 'mint') {
     document.documentElement.setAttribute('data-shell', activeShell);
@@ -90,6 +90,17 @@ function createApp() {
   gpuLabel.textContent = 'GPU 啟動中…';
   gpuPill.append(gpuDot, gpuLabel);
 
+  // Momo Mascot Happy Hop animation helper
+  let momoHappyTimer = 0;
+  const triggerMomoHappy = () => {
+    momoHappyTimer = 1.4;
+    momoBtn.classList.remove('is-hopping');
+    void momoBtn.offsetWidth;
+    momoBtn.classList.add('is-hopping');
+  };
+
+  const host = new EngineHost(runner, synth, save, triggerMomoHappy);
+
   const swatchBox = document.createElement('div');
   swatchBox.className = 'shell-swatches';
   const swatchBtns = new Map<ShellTheme, HTMLButtonElement>();
@@ -105,15 +116,14 @@ function createApp() {
     btn.style.background = `linear-gradient(90deg, ${theme.left} 50%, ${theme.right} 50%)`;
     btn.title = `外殼換色：${theme.label}`;
     btn.addEventListener('click', () => {
-      synth.unlock();
-      synth.playPreset('snap');
+      host.playUiSound('snap');
       activeShell = theme.id;
       if (theme.id === 'mint') {
         document.documentElement.removeAttribute('data-shell');
       } else {
         document.documentElement.setAttribute('data-shell', theme.id);
       }
-      localStorage.setItem(SHELL_STORAGE_KEY, theme.id);
+      save.saveShellTheme(theme.id);
       syncSwatches();
       consoleView.playRailSnap();
     });
@@ -127,7 +137,7 @@ function createApp() {
   muteBtn.className = 'toy-btn';
   muteBtn.textContent = '🔊 音效開';
   muteBtn.addEventListener('click', () => {
-    synth.unlock();
+    host.unlockAudio();
     const muted = synth.toggleMute();
     muteBtn.textContent = muted ? '🔇 靜音中' : '🔊 音效開';
     if (!muted) synth.playPreset('snap');
@@ -136,27 +146,9 @@ function createApp() {
   headerTools.append(gpuPill, swatchBox, muteBtn);
   header.append(brandCluster, headerTools);
 
-  // Momo Mascot Happy Hop animation helper
-  let momoHappyTimer = 0;
-  const triggerMomoHappy = () => {
-    momoHappyTimer = 1.4;
-    momoBtn.classList.remove('is-hopping');
-    void momoBtn.offsetWidth;
-    momoBtn.classList.add('is-hopping');
-  };
-
   momoBtn.addEventListener('click', () => {
-    synth.unlock();
-    synth.playPreset('bounce');
+    host.playUiSound('bounce');
     triggerMomoHappy();
-  });
-
-  // Forward simulation events to ToySynth & Momo reactions
-  runner.setEventListener((ev: SimEvent) => {
-    synth.playPreset(ev);
-    if (ev === 'star' || ev === 'key' || ev === 'win') {
-      triggerMomoHappy();
-    }
   });
 
   // Create Views
@@ -166,7 +158,7 @@ function createApp() {
   const tabBtns = new Map<StationId, HTMLButtonElement>();
 
   const atlas = new TextureAtlas();
-  const consoleView = new ConsoleView(runner, synth, atlas, triggerMomoHappy);
+  const consoleView = new ConsoleView(host, atlas);
 
   const updateGpuBadge = (kind: GpuBackendKind) => {
     gpuDot.classList.toggle('is-webgpu', kind === 'webgpu');
@@ -178,7 +170,7 @@ function createApp() {
 
   let switchStation: (next: StationId) => void = () => {};
   const spriteAtelierView = new SpriteAtelierView(gpuEngine, synth, triggerMomoHappy);
-  const workshopView = new WorkshopView(runner, synth, () => {
+  const workshopView = new WorkshopView(host, () => {
     switchStation('play');
     consoleView.insertCartridge('sandbox-toybox');
   });
@@ -206,8 +198,7 @@ function createApp() {
     btn.dataset.station = st.id;
     btn.innerHTML = `<span class="tab-icon">${st.icon}</span><span>${st.label}</span>`;
     btn.addEventListener('click', () => {
-      synth.unlock();
-      synth.playPreset('snap');
+      host.playUiSound('snap');
       switchStation(st.id);
     });
     tabBtns.set(st.id, btn);
@@ -235,7 +226,7 @@ function createApp() {
     gpuEngine.syncAtlasToGpu();
   });
 
-  // Main 60Hz Fixed-Timestep Loop + GPU Batch Render
+  // Main 60Hz Fixed-Timestep Loop + Audio EventQueue Flush + GPU Batch Render
   let lastTs = performance.now();
   let fpsSmooth = 60;
 
@@ -262,7 +253,7 @@ function createApp() {
       const phase = consoleView.getPhase();
       if (phase === 'running') {
         const input = consoleView.getInput();
-        runner.update(dt, input);
+        host.stepFrame(dt, input);
         const snap = runner.getSnapshot();
         const stats = bridge.render(
           gpuEngine,

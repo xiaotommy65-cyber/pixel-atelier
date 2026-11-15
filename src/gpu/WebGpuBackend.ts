@@ -46,7 +46,7 @@ struct InstanceIn {
   @location(0) rectPosSize: vec4f, // x, y, w, h
   @location(1) uvBounds: vec4f,    // u0, v0, u1, v1
   @location(2) tint: vec4f,        // r, g, b, a
-  @location(3) extra: vec4f,       // x: rot, y: mode (0 sprite, 1 light, 2 solid)
+  @location(3) extra: vec4f,       // x: rot, y: mode (0 sprite, 1 light, 2 solid), z: flash, w: param
 };
 
 struct SpriteOut {
@@ -55,6 +55,8 @@ struct SpriteOut {
   @location(1) localUv: vec2f,
   @location(2) tint: vec4f,
   @location(3) mode: f32,
+  @location(4) flash: f32,
+  @location(5) param: f32,
 };
 
 @vertex
@@ -89,28 +91,34 @@ fn vsSprite(@builtin(vertex_index) vid: u32, inst: InstanceIn) -> SpriteOut {
   out.localUv = u01;
   out.tint = inst.tint;
   out.mode = inst.extra.y;
+  out.flash = inst.extra.z;
+  out.param = inst.extra.w;
   return out;
 }
 
 @fragment
 fn fsSprite(in: SpriteOut) -> @location(0) vec4f {
   if (in.mode > 1.5) {
-    // Mode 2: Solid crisp pixel shape
-    return in.tint;
+    // Mode 2: Solid crisp pixel shape with optional flash
+    let solidRgb = mix(in.tint.rgb, vec3f(1.0), clamp(in.flash, 0.0, 1.0));
+    return vec4f(solidRgb, in.tint.a);
   }
   if (in.mode > 0.5) {
-    // Mode 1: Smooth radial GPU light / bloom orb
+    // Mode 1: Smooth radial GPU light / bloom orb (param overrides falloff power, default 2.0)
     let d = length(in.localUv * 2.0 - vec2f(1.0));
     let falloff = clamp(1.0 - d, 0.0, 1.0);
-    let glow = falloff * falloff;
+    let power = select(2.0, in.param, in.param > 0.1);
+    let glow = pow(falloff, power);
     return vec4f(in.tint.rgb, in.tint.a * glow);
   }
-  // Mode 0: Crisp nearest-sampled Texture Atlas sprite
+  // Mode 0: Crisp nearest-sampled Texture Atlas sprite with per-instance hit-flash
   let sampled = textureSample(uAtlas, uSamp, in.texUv);
   if (sampled.a < 0.05) {
     discard;
   }
-  return vec4f(sampled.rgb * in.tint.rgb, sampled.a * in.tint.a);
+  let baseRgb = sampled.rgb * in.tint.rgb;
+  let finalRgb = mix(baseRgb, vec3f(1.0), clamp(in.flash, 0.0, 1.0));
+  return vec4f(finalRgb, sampled.a * in.tint.a);
 }
 `;
 
