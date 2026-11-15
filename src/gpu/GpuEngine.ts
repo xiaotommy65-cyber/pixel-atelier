@@ -10,7 +10,7 @@ export function hexToRgb01(hex: string): [number, number, number] {
 }
 
 export class GpuEngine {
-  public readonly atlas = new TextureAtlas();
+  public readonly atlas: TextureAtlas;
   private backend: IGpuBackend | null = null;
   private canvas: HTMLCanvasElement;
   private alphaItems = new Float32Array(MAX_INSTANCES_PER_PASS * FLOATS_PER_INSTANCE);
@@ -33,9 +33,14 @@ export class GpuEngine {
     frameTimeMs: 0,
   };
 
-  constructor(canvas: HTMLCanvasElement, onBackendChange?: (kind: GpuBackendKind) => void) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    onBackendChange?: (kind: GpuBackendKind) => void,
+    atlas: TextureAtlas = new TextureAtlas(),
+  ) {
     this.canvas = canvas;
     this.onBackendChange = onBackendChange;
+    this.atlas = atlas;
   }
 
   public async init(): Promise<GpuBackendKind> {

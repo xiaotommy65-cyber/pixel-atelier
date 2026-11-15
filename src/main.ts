@@ -1,4 +1,5 @@
 import './styles/atelier.css';
+import './styles/switch.css';
 
 import { ToySynth } from './audio/ToySynth.ts';
 import { CartridgeRunner } from './engine/CartridgeRunner.ts';
@@ -6,6 +7,7 @@ import { SceneGpuBridge } from './engine/SceneGpuBridge.ts';
 import type { SimEvent } from './engine/WorldTypes.ts';
 import { GpuEngine } from './gpu/GpuEngine.ts';
 import type { GpuBackendKind } from './gpu/GpuTypes.ts';
+import { TextureAtlas } from './gpu/TextureAtlas.ts';
 import { ConsoleView } from './ui/ConsoleView.ts';
 import { drawAtlasSpriteToCanvas } from './ui/MomoMascot.ts';
 import { SpriteAtelierView } from './ui/SpriteAtelierView.ts';
@@ -17,11 +19,11 @@ type ShellTheme = 'mint' | 'berry' | 'honey' | 'sky';
 
 const SHELL_STORAGE_KEY = 'pixel-atelier-shell-v1';
 
-const SHELL_THEMES: { id: ShellTheme; label: string; hex: string }[] = [
-  { id: 'mint', label: '薄荷奶油', hex: '#8ae3bc' },
-  { id: 'berry', label: '草莓牛奶', hex: '#ffacc0' },
-  { id: 'honey', label: '蜂蜜檸檬', hex: '#ffe280' },
-  { id: 'sky', label: '星空藍莓', hex: '#94d7ff' },
+const SHELL_THEMES: { id: ShellTheme; label: string; left: string; right: string }[] = [
+  { id: 'mint', label: '薄荷 × 草莓', left: '#7fdcb4', right: '#ff8fa8' },
+  { id: 'berry', label: '草莓牛奶', left: '#ffb3c6', right: '#ffb3c6' },
+  { id: 'honey', label: '蜂蜜 × 汽水', left: '#ffdd6e', right: '#7fcdf5' },
+  { id: 'sky', label: '藍莓 × 葡萄', left: '#8fc8ff', right: '#c9a8ff' },
 ];
 
 const STATIONS: { id: StationId; icon: string; label: string }[] = [
@@ -98,7 +100,7 @@ function createApp() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'shell-swatch';
-    btn.style.backgroundColor = theme.hex;
+    btn.style.background = `linear-gradient(90deg, ${theme.left} 50%, ${theme.right} 50%)`;
     btn.title = `外殼換色：${theme.label}`;
     btn.addEventListener('click', () => {
       synth.unlock();
@@ -160,7 +162,8 @@ function createApp() {
   nav.className = 'station-nav';
   const tabBtns = new Map<StationId, HTMLButtonElement>();
 
-  const consoleView = new ConsoleView(runner, synth, triggerMomoHappy);
+  const atlas = new TextureAtlas();
+  const consoleView = new ConsoleView(runner, synth, atlas, triggerMomoHappy);
 
   const updateGpuBadge = (kind: GpuBackendKind) => {
     gpuDot.classList.toggle('is-webgpu', kind === 'webgpu');
@@ -168,15 +171,21 @@ function createApp() {
       kind === 'webgpu' ? 'WebGPU WGSL' : kind === 'webgl2' ? 'WebGL2 GLSL' : '初始化中';
   };
 
-  const gpuEngine = new GpuEngine(consoleView.canvas, updateGpuBadge);
+  const gpuEngine = new GpuEngine(consoleView.canvas, updateGpuBadge, atlas);
 
+  let switchStation: (next: StationId) => void = () => {};
   const spriteAtelierView = new SpriteAtelierView(gpuEngine, synth, triggerMomoHappy);
-  const workshopView = new WorkshopView(runner, synth, () => switchStation('play'));
+  const workshopView = new WorkshopView(runner, synth, () => {
+    switchStation('play');
+    consoleView.insertCartridge('sandbox-toybox');
+  });
   const synthPianoView = new SynthPianoView(synth, triggerMomoHappy);
 
-  const switchStation = (next: StationId) => {
+  switchStation = (next: StationId) => {
     activeStation = next;
-    consoleView.syncCartridgeChips();
+    if (next === 'play') {
+      consoleView.refreshCardArt();
+    }
     consoleView.element.classList.toggle('panel-hidden', next !== 'play');
     spriteAtelierView.element.classList.toggle('panel-hidden', next !== 'sprite');
     workshopView.element.classList.toggle('panel-hidden', next !== 'workshop');
@@ -246,15 +255,33 @@ function createApp() {
     }
 
     if (activeStation === 'play') {
-      const input = consoleView.getInput();
-      runner.update(dt, input);
-      const snap = runner.getSnapshot();
-      const stats = bridge.render(
-        gpuEngine,
-        snap,
-        runner.sparkleBenchmark ? runner.benchmarkSprites : null,
-      );
-      consoleView.updateHud(snap, stats, fpsSmooth);
+      consoleView.tick(dt);
+      const phase = consoleView.getPhase();
+      if (phase === 'running') {
+        const input = consoleView.getInput();
+        runner.update(dt, input);
+        const snap = runner.getSnapshot();
+        const stats = bridge.render(
+          gpuEngine,
+          snap,
+          runner.sparkleBenchmark ? runner.benchmarkSprites : null,
+        );
+        consoleView.updateHud(snap, stats, fpsSmooth);
+      } else if (phase === 'booting') {
+        const stats = bridge.render(gpuEngine, runner.getSnapshot(), null);
+        consoleView.updateStats(stats, fpsSmooth);
+      } else {
+        const stats = bridge.renderIdle(gpuEngine, now / 1000);
+        consoleView.updateStats(stats, fpsSmooth);
+      }
+
+      if (consoleView.consumeCaptureRequest()) {
+        const dataUrl = consoleView.canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `pixel-atelier-${Date.now()}.png`;
+        link.click();
+      }
     } else if (activeStation === 'sprite') {
       spriteAtelierView.tickPreview(dt);
     }

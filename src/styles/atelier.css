@@ -6,10 +6,13 @@
   --ink-soft: #755c4e;
   --border-w: 2.5px;
 
-  /* Default Mint Cream Handheld Shell */
-  --shell-face: #8ae3bc;
-  --shell-shade: #4fc190;
-  --shell-highlight: #bcf5dc;
+  /* Default Joy-Con pair: Mint (left) x Strawberry (right) */
+  --jc-left: #7fdcb4;
+  --jc-left-shade: #45b886;
+  --jc-right: #ff8fa8;
+  --jc-right-shade: #e0607f;
+  --console-body: #3b3236;
+  --console-body-hi: #4d4247;
 
   --accent-coral: #ff708d;
   --accent-coral-deep: #d94162;
@@ -26,21 +29,24 @@
 }
 
 [data-shell='berry'] {
-  --shell-face: #ffacc0;
-  --shell-shade: #e86b8b;
-  --shell-highlight: #ffd4df;
+  --jc-left: #ffb3c6;
+  --jc-left-shade: #e57d98;
+  --jc-right: #ffb3c6;
+  --jc-right-shade: #e57d98;
 }
 
 [data-shell='honey'] {
-  --shell-face: #ffe280;
-  --shell-shade: #eba923;
-  --shell-highlight: #fff1b8;
+  --jc-left: #ffdd6e;
+  --jc-left-shade: #e2a92a;
+  --jc-right: #7fcdf5;
+  --jc-right-shade: #3f9fd6;
 }
 
 [data-shell='sky'] {
-  --shell-face: #94d7ff;
-  --shell-shade: #4aa3e3;
-  --shell-highlight: #c7ebff;
+  --jc-left: #8fc8ff;
+  --jc-left-shade: #4f8fdc;
+  --jc-right: #c9a8ff;
+  --jc-right-shade: #9471d9;
 }
 
 * {
@@ -313,329 +319,6 @@ textarea {
   display: none !important;
 }
 
-.handheld-console {
-  background: var(--shell-face);
-  border: 3px solid var(--ink);
-  border-radius: 30px;
-  box-shadow:
-    inset 0 5px 0 var(--shell-highlight),
-    inset 0 -8px 0 var(--shell-shade),
-    0 10px 0 var(--ink);
-  padding: 14px 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transition: background 240ms ease;
-}
-
-.cartridge-bay {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cartridge-list {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cart-chip {
-  appearance: none;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  background: rgba(255, 253, 248, 0.88);
-  padding: 6px 11px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 3px 0 var(--ink);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: transform 180ms var(--ease-bounce), background 150ms ease;
-}
-
-.cart-chip:hover {
-  transform: translateY(-2px);
-}
-
-.cart-chip.is-inserted {
-  background: #fffdf8;
-  transform: translateY(1px);
-  box-shadow: 0 2px 0 var(--ink);
-  animation: cartSnap 280ms var(--ease-bounce);
-}
-
-@keyframes cartSnap {
-  0% { transform: translateY(-6px) scale(0.97); }
-  60% { transform: translateY(2px) scale(1.03); }
-  100% { transform: translateY(1px) scale(1); }
-}
-
-.cart-code {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: var(--bg-well);
-  border: 1.5px solid var(--ink);
-}
-
-/* LCD Screen Bezel */
-.screen-bezel {
-  background: #2f2930;
-  border: 3px solid var(--ink);
-  border-radius: 20px;
-  padding: 10px 12px 12px;
-  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.screen-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: #fff3e6;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.74rem;
-  flex-wrap: wrap;
-}
-
-.screen-metrics {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.metric-tag {
-  background: rgba(255, 255, 255, 0.11);
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.screen-frame {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 2px solid #1e181e;
-  background: #6dbcf2;
-}
-
-.game-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-  image-rendering: pixelated;
-}
-
-.screen-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(56, 40, 32, 0.56);
-  backdrop-filter: blur(2px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 16px;
-  text-align: center;
-}
-
-.overlay-card {
-  background: var(--bg-card);
-  border: 3px solid var(--ink);
-  border-radius: 20px;
-  box-shadow: 0 6px 0 var(--ink);
-  padding: 16px 24px;
-  max-width: 320px;
-  animation: cartSnap 300ms var(--ease-bounce);
-}
-
-.overlay-card h3 {
-  margin: 0 0 6px;
-  font-size: 1.2rem;
-  font-weight: 900;
-}
-
-.overlay-card p {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-  font-weight: 600;
-}
-
-.screen-status-hint {
-  color: #ffe7b8;
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-align: center;
-  min-height: 1.2em;
-}
-
-/* Tactile Handheld Controls Deck */
-.controls-deck {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-.dpad {
-  display: grid;
-  grid-template-columns: repeat(3, 40px);
-  grid-template-rows: repeat(3, 40px);
-  gap: 3px;
-  touch-action: none;
-  user-select: none;
-}
-
-.dpad-btn {
-  appearance: none;
-  border: 2.5px solid var(--ink);
-  background: #463a35;
-  color: #fffaf0;
-  font-weight: 800;
-  font-size: 0.9rem;
-  border-radius: 10px;
-  cursor: pointer;
-  box-shadow: 0 3px 0 var(--ink);
-  display: grid;
-  place-items: center;
-  touch-action: none;
-  transition: transform 90ms ease, box-shadow 90ms ease;
-}
-
-.dpad-btn.is-pressed {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--ink);
-  background: #64534c;
-}
-
-.dpad-center {
-  background: #382820;
-  border-radius: 8px;
-  border: 2px solid var(--ink);
-}
-
-.deck-middle {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.deck-mini-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.mini-pill-btn {
-  appearance: none;
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  background: var(--bg-well);
-  padding: 5px 11px;
-  font-size: 0.72rem;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 2px 0 var(--ink);
-  transition: transform 110ms ease;
-}
-
-.mini-pill-btn:active {
-  transform: translateY(2px);
-  box-shadow: 0 0 0 var(--ink);
-}
-
-.bench-btn {
-  background: var(--bg-card);
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  padding: 6px 13px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 3px 0 var(--ink);
-  transition: transform 150ms var(--ease-bounce), background 150ms ease;
-}
-
-.bench-btn.is-on {
-  background: var(--accent-honey);
-}
-
-.bench-btn:active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--ink);
-}
-
-.ab-cluster {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  touch-action: none;
-  user-select: none;
-}
-
-.ab-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.ab-wrap:first-child {
-  margin-top: 16px;
-}
-
-.ab-btn {
-  appearance: none;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 3px solid var(--ink);
-  font-weight: 900;
-  font-size: 1.05rem;
-  cursor: pointer;
-  box-shadow: 0 5px 0 var(--ink);
-  touch-action: none;
-  transition: transform 100ms ease, box-shadow 100ms ease;
-}
-
-.ab-btn.is-b {
-  background: var(--accent-coral);
-  color: #fffdf8;
-}
-
-.ab-btn.is-a {
-  background: var(--accent-honey);
-  color: var(--ink);
-}
-
-.ab-btn.is-pressed {
-  transform: translateY(4px);
-  box-shadow: 0 1px 0 var(--ink);
-}
-
-.ab-caption {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
 /* Studio Cards (Sprite Atelier / Workshop / Synth Piano) */
 .studio-card {
   background: var(--bg-card);
@@ -875,13 +558,6 @@ textarea {
   gap: 8px;
 }
 
-.console-footer-note {
-  text-align: center;
-  font-size: 0.78rem;
-  color: var(--ink-soft);
-  font-weight: 700;
-}
-
 @media (max-width: 760px) {
   .atelier-shell {
     padding: 8px 10px 18px;
@@ -903,50 +579,6 @@ textarea {
     font-size: 0.72rem;
     padding: 7px 4px;
     border-radius: 13px;
-  }
-
-  .handheld-console {
-    padding: 10px 10px 12px;
-    border-radius: 22px;
-    gap: 8px;
-  }
-
-  .cartridge-bay {
-    gap: 6px;
-  }
-
-  .cartridge-list {
-    gap: 6px;
-  }
-
-  .cart-chip {
-    padding: 4px 8px;
-    font-size: 0.72rem;
-  }
-
-  .screen-bezel {
-    padding: 7px 8px 8px;
-    border-radius: 16px;
-    gap: 5px;
-  }
-
-  .console-footer-note {
-    display: none;
-  }
-
-  .controls-deck {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-
-  .deck-middle {
-    grid-column: 1 / -1;
-    order: 2;
-    gap: 6px;
-  }
-
-  .ab-cluster {
-    justify-content: flex-end;
   }
 
   .atelier-grid-layout,

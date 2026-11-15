@@ -1,0 +1,747 @@
+/* ==========================================================
+   Switch-style handheld: Joy-Con L | console body | Joy-Con R
+   + top cartridge slot + game card case
+   ========================================================== */
+
+.switch-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.switch-console {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) 132px;
+  grid-template-areas: 'left body right';
+  margin-top: 54px;
+  align-items: stretch;
+}
+
+/* ---------- Joy-Cons ---------- */
+.joycon {
+  position: relative;
+  border: 3px solid var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 12px 20px;
+  touch-action: none;
+  user-select: none;
+  transition: background 260ms ease;
+}
+
+.joycon.is-left {
+  grid-area: left;
+  background: var(--jc-left);
+  border-right: none;
+  border-radius: 66px 10px 10px 66px / 70px 10px 10px 70px;
+  box-shadow:
+    inset 0 5px 0 rgba(255, 255, 255, 0.42),
+    inset 7px -7px 0 var(--jc-left-shade),
+    0 8px 0 var(--ink);
+}
+
+.joycon.is-right {
+  grid-area: right;
+  background: var(--jc-right);
+  border-left: none;
+  border-radius: 10px 66px 66px 10px / 10px 70px 70px 10px;
+  box-shadow:
+    inset 0 5px 0 rgba(255, 255, 255, 0.42),
+    inset -7px -7px 0 var(--jc-right-shade),
+    0 8px 0 var(--ink);
+}
+
+.jc-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.joycon.is-left .jc-row {
+  justify-content: flex-end;
+}
+
+.joycon.is-right .jc-row {
+  justify-content: flex-start;
+}
+
+.jc-sys-btn {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ink);
+  background: #463a35;
+  color: #fffaf0;
+  font-weight: 900;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 3px 0 var(--ink);
+  transition: transform 100ms ease, box-shadow 100ms ease;
+}
+
+.jc-sys-btn.is-square {
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+}
+
+.jc-sys-btn.is-home {
+  width: 34px;
+  height: 34px;
+  background: #fffaf0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.jc-sys-btn:active,
+.jc-sys-btn.is-pressed {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--ink);
+}
+
+/* Analog stick (functional) */
+.stick {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: #2d2427;
+  border: 3px solid var(--ink);
+  box-shadow: inset 0 4px 0 rgba(0, 0, 0, 0.35);
+  touch-action: none;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #6b5c58 0%, #463a35 70%);
+  border: 2.5px solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  transition: transform 140ms var(--ease-bounce);
+  pointer-events: none;
+}
+
+.stick.is-active .stick-knob {
+  transition: none;
+}
+
+/* Diamond button clusters */
+.diamond {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  grid-template-rows: repeat(3, 34px);
+  gap: 2px;
+  touch-action: none;
+}
+
+.dia-btn {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ink);
+  background: #463a35;
+  color: #fffaf0;
+  font-weight: 900;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 3px 0 var(--ink);
+  touch-action: none;
+  transition: transform 90ms ease, box-shadow 90ms ease, filter 90ms ease;
+}
+
+.dia-btn.is-a { background: var(--accent-honey); color: var(--ink); }
+.dia-btn.is-b { background: var(--accent-coral); color: #fffdf8; }
+.dia-btn.is-x { background: var(--accent-sky); color: var(--ink); }
+.dia-btn.is-y { background: var(--accent-mint); color: var(--ink); }
+
+.dia-btn.is-pressed {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--ink);
+  filter: brightness(1.08);
+}
+
+.dia-n { grid-column: 2; grid-row: 1; }
+.dia-w { grid-column: 1; grid-row: 2; }
+.dia-e { grid-column: 3; grid-row: 2; }
+.dia-s { grid-column: 2; grid-row: 3; }
+
+/* ---------- Console body ---------- */
+.console-body {
+  grid-area: body;
+  position: relative;
+  background: var(--console-body);
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  box-shadow:
+    inset 0 4px 0 var(--console-body-hi),
+    0 8px 0 var(--ink);
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.top-vol {
+  position: absolute;
+  top: -9px;
+  right: 34px;
+  display: flex;
+  gap: 6px;
+}
+
+.top-vol span {
+  width: 26px;
+  height: 7px;
+  border-radius: 4px 4px 0 0;
+  background: #5a4d50;
+  border: 2px solid var(--ink);
+  border-bottom: none;
+}
+
+/* Cartridge slot on the top edge */
+.cart-slot {
+  position: absolute;
+  top: -58px;
+  left: 20px;
+  width: 58px;
+  height: 62px;
+}
+
+.slot-window {
+  position: absolute;
+  inset: 0 0 4px 0;
+  overflow: hidden;
+}
+
+.slot-mouth {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  bottom: 0;
+  height: 9px;
+  border-radius: 5px;
+  background: #1c1619;
+  border: 2px solid var(--ink);
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.cart-slot.is-empty .slot-mouth {
+  animation: slotPulse 1.6s ease-in-out infinite;
+}
+
+.cart-slot.is-hot .slot-mouth {
+  background: var(--accent-honey);
+  box-shadow: 0 0 0 5px rgba(255, 212, 71, 0.45);
+  animation: none;
+}
+
+@keyframes slotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 212, 71, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 212, 71, 0.5); }
+}
+
+.slot-card {
+  position: absolute;
+  left: 6px;
+  top: 40px;
+  width: 46px;
+  height: 60px;
+  border-radius: 5px 11px 5px 5px;
+  border: 2px solid var(--ink);
+  background: linear-gradient(var(--card-accent, #ff708d) 0 17px, #fffdf8 17px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.56rem;
+  font-weight: 700;
+  color: #fffdf8;
+  cursor: pointer;
+  animation: slotIn 420ms var(--ease-bounce);
+}
+
+.slot-card.is-ejecting {
+  animation: slotOut 300ms ease-in forwards;
+}
+
+@keyframes slotIn {
+  0% { transform: translateY(-40px); }
+  70% { transform: translateY(3px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes slotOut {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(6px); }
+  100% { transform: translateY(-44px) rotate(-6deg); opacity: 0; }
+}
+
+.slot-side {
+  position: absolute;
+  top: -40px;
+  left: 92px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.slot-hint {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--bg-card);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 3px 10px;
+  box-shadow: 0 2px 0 var(--ink);
+  animation: hintBob 1.8s ease-in-out infinite;
+}
+
+@keyframes hintBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.eject-btn {
+  appearance: none;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--bg-card);
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--ink);
+  transition: transform 120ms var(--ease-bounce);
+}
+
+.eject-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* Screen */
+.screen-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #fff3e6;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  flex-wrap: wrap;
+}
+
+.screen-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.metric-tag {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.screen-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 3px solid #161114;
+  background: #6dbcf2;
+}
+
+.game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.screen-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+  text-align: center;
+}
+
+.screen-overlay.is-dim {
+  background: rgba(56, 40, 32, 0.56);
+  backdrop-filter: blur(2px);
+}
+
+.insert-prompt {
+  justify-content: flex-end;
+  padding-bottom: 7%;
+  pointer-events: none;
+}
+
+.insert-pill {
+  background: var(--bg-card);
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 4px 0 var(--ink);
+  padding: 6px 16px;
+  font-weight: 900;
+  font-size: clamp(0.78rem, 2.2vw, 1rem);
+  color: var(--ink);
+  animation: hintBob 1.6s ease-in-out infinite;
+}
+
+.boot-splash {
+  background: var(--boot-accent, #ff708d);
+  color: #fffdf8;
+  animation: bootFade 1.35s ease forwards;
+}
+
+.boot-art {
+  width: min(34%, 180px);
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  image-rendering: pixelated;
+  box-shadow: 0 5px 0 var(--ink);
+  animation: bootArt 600ms var(--ease-bounce);
+}
+
+.boot-title {
+  margin: 0;
+  font-size: clamp(1rem, 3.4vw, 1.5rem);
+  font-weight: 900;
+  text-shadow: 0 2px 0 var(--ink);
+}
+
+.boot-brand {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.boot-bar {
+  width: min(46%, 220px);
+  height: 9px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+}
+
+.boot-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #fffdf8;
+  animation: bootBar 1.15s ease-out forwards;
+}
+
+@keyframes bootBar { to { width: 100%; } }
+@keyframes bootArt { from { transform: scale(0.6) rotate(-6deg); opacity: 0; } }
+@keyframes bootFade {
+  0%, 82% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.capture-flash {
+  position: absolute;
+  inset: 0;
+  background: #fffdf8;
+  pointer-events: none;
+  animation: flash 380ms ease-out forwards;
+}
+
+@keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
+
+.overlay-card {
+  background: var(--bg-card);
+  border: 3px solid var(--ink);
+  border-radius: 20px;
+  box-shadow: 0 6px 0 var(--ink);
+  padding: 14px 22px;
+  max-width: 320px;
+  color: var(--ink);
+  animation: bootArt 300ms var(--ease-bounce);
+}
+
+.overlay-card h3 {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.overlay-card p {
+  margin: 0 0 12px;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.screen-status-hint {
+  color: #ffe7b8;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
+  min-height: 1.2em;
+}
+
+.body-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.speaker {
+  display: grid;
+  grid-template-columns: repeat(4, 5px);
+  gap: 4px;
+}
+
+.speaker span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #1c1619;
+}
+
+.body-legend {
+  color: #cdbfb6;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  flex: 1;
+}
+
+.bench-btn {
+  appearance: none;
+  background: var(--bg-card);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--ink);
+  transition: transform 150ms var(--ease-bounce), background 150ms ease;
+}
+
+.bench-btn.is-on {
+  background: var(--accent-honey);
+}
+
+.bench-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* ---------- Game card case ---------- */
+.card-case {
+  background: #f2e3c9;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 4px 0 rgba(255, 255, 255, 0.6), 0 5px 0 var(--ink);
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.case-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.case-head strong {
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.case-head span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.card-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.game-card {
+  --card-accent: #ff708d;
+  position: relative;
+  width: 108px;
+  border: 2.5px solid var(--ink);
+  border-radius: 9px 22px 9px 9px;
+  background: linear-gradient(var(--card-accent) 0 20px, #fffdf8 20px);
+  box-shadow: 0 4px 0 var(--ink);
+  padding: 4px 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: transform 220ms var(--ease-bounce), box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.game-card:hover {
+  transform: translateY(-4px) rotate(-1.5deg);
+}
+
+.game-card.is-dragging {
+  z-index: 40;
+  cursor: grabbing;
+  transition: none;
+  box-shadow: 0 14px 22px rgba(56, 40, 32, 0.28);
+}
+
+.game-card.is-flying {
+  visibility: hidden;
+}
+
+.game-card.is-out {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.game-card.is-out > * {
+  opacity: 0;
+}
+
+.game-card.is-out::after {
+  content: '在主機裡 ▲';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.game-card.is-returning {
+  animation: cardPop 380ms var(--ease-bounce);
+}
+
+@keyframes cardPop {
+  0% { transform: translateY(-14px) scale(0.92); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+.card-ghost {
+  pointer-events: none;
+  transition: transform 460ms cubic-bezier(0.45, 0, 0.25, 1.15);
+}
+
+.card-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #fffdf8;
+  height: 14px;
+}
+
+.card-art {
+  width: 100%;
+  aspect-ratio: 8 / 5;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  image-rendering: pixelated;
+  display: block;
+  pointer-events: none;
+}
+
+.card-title {
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.card-genre {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+/* ---------- Phone portrait: screen on top, Joy-Cons side by side ---------- */
+@media (max-width: 760px) {
+  .switch-console {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'body body'
+      'left right';
+    row-gap: 12px;
+    margin-top: 56px;
+  }
+
+  .console-body {
+    border-radius: 16px;
+    padding: 10px 9px 8px;
+  }
+
+  .joycon {
+    padding: 12px 10px 14px;
+    gap: 10px;
+  }
+
+  .joycon.is-left {
+    border-right: 3px solid var(--ink);
+    border-radius: 18px 14px 14px 56px;
+  }
+
+  .joycon.is-right {
+    border-left: 3px solid var(--ink);
+    border-radius: 14px 18px 56px 14px;
+  }
+
+  .body-legend {
+    display: none;
+  }
+
+  .card-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .game-card {
+    flex-shrink: 0;
+    width: 98px;
+  }
+}

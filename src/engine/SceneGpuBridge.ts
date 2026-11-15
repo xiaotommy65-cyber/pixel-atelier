@@ -1,10 +1,40 @@
-import { GAME_W } from '../gpu/GpuTypes';
+import { GAME_H, GAME_W } from '../gpu/GpuTypes';
 import type { GpuEngine } from '../gpu/GpuEngine';
 import type { GpuFrameStats } from '../gpu/GpuTypes';
 import type { BenchmarkSprite } from './CartridgeRunner';
 import type { RenderSceneSnapshot } from './WorldTypes';
 
 export class SceneGpuBridge {
+  /** Home screen shown while no game card is inserted. */
+  public renderIdle(gpu: GpuEngine, timeSec: number): GpuFrameStats {
+    gpu.beginFrame('#ffd3df', '#fff6e4', true);
+
+    for (let i = 0; i < 4; i++) {
+      const span = GAME_W + 80;
+      const x = ((i * 97 + timeSec * (6 + i * 2)) % span) - 40;
+      const y = 22 + ((i * 37) % 70);
+      for (let k = 0; k < 3; k++) {
+        const id = k === 0 ? 'cloud_l' : k === 1 ? 'cloud_m' : 'cloud_r';
+        gpu.drawSprite(id, x + k * 16 + 8, y + 8, { alpha: 0.85 });
+      }
+    }
+
+    const cx = GAME_W * 0.5;
+    const cy = GAME_H * 0.42;
+    const bob = Math.sin(timeSec * 2.4) * 4;
+    gpu.drawLight(cx, cy + bob, 64, '#fff2cc', 0.55);
+    for (let i = 0; i < 6; i++) {
+      const ang = timeSec * 0.9 + (i * Math.PI) / 3;
+      gpu.drawSprite('star_a', cx + Math.cos(ang) * 72, cy + Math.sin(ang) * 34 + bob, {
+        w: 12,
+        h: 12,
+        rot: ang,
+      });
+    }
+    const mood = Math.floor(timeSec * 1.5) % 3 === 0 ? 'momo_happy' : 'momo_idle';
+    gpu.drawSprite(mood, cx, cy + bob, { w: 48, h: 48 });
+    return gpu.flush(timeSec);
+  }
   public render(
     gpu: GpuEngine,
     snap: RenderSceneSnapshot,
