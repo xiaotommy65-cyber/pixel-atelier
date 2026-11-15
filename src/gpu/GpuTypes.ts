@@ -1,9 +1,9 @@
 export const GAME_W = 320;
 export const GAME_H = 180;
+export const FLOATS_PER_INSTANCE = 16;
+export const MAX_INSTANCES_PER_PASS = 8192;
 
 export type GpuBackendKind = 'webgpu' | 'webgl2' | 'initializing';
-
-export type DrawMode = 'sprite' | 'light' | 'solid';
 
 export interface SpriteRect {
   u0: number;

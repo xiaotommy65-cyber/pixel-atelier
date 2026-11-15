@@ -1,7 +1,11 @@
-import { GAME_H, GAME_W, type IGpuBackend, type SkyGradient } from './GpuTypes';
-
-export const FLOATS_PER_INSTANCE = 16;
-export const MAX_INSTANCES_PER_PASS = 8192;
+import {
+  FLOATS_PER_INSTANCE,
+  GAME_H,
+  GAME_W,
+  MAX_INSTANCES_PER_PASS,
+  type IGpuBackend,
+  type SkyGradient,
+} from './GpuTypes';
 
 const WGSL_CODE = /* wgsl */ `
 struct SkyUniforms {

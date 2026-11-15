@@ -70,6 +70,19 @@ const CHAR_MAP: Record<string, number> = {
   '8': 8, '9': 9, a: 10, b: 11, c: 12, d: 13, e: 14, f: 15,
 };
 
+export function parseGridToIndices(grid: readonly string[], out?: Uint8Array): Uint8Array {
+  const h = grid.length;
+  const w = grid[0]?.length ?? TILE_PX;
+  const buf = out ?? new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const rowStr = grid[y] ?? '';
+    for (let x = 0; x < w; x++) {
+      buf[y * w + x] = CHAR_MAP[rowStr[x] ?? '.'] ?? 0;
+    }
+  }
+  return buf;
+}
+
 // Default Hero Sprout Knight (16x16 palette-indexed grids, editable live in Sprite Atelier!)
 export const DEFAULT_HERO_FRAME_A: string[] = [
   '......1111......',
@@ -682,13 +695,12 @@ export class TextureAtlas {
     };
   }
 
-  private writeIndexedGrid(col: number, row: number, grid: string[]) {
+  private blitIndexBuffer(col: number, row: number, buf: Uint8Array, w = TILE_PX, h = TILE_PX) {
     const startX = col * TILE_PX;
     const startY = row * TILE_PX;
-    for (let y = 0; y < grid.length; y++) {
-      const line = grid[y];
-      for (let x = 0; x < line.length; x++) {
-        const idx = CHAR_MAP[line[x]] ?? 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = buf[y * w + x] ?? 0;
         const [r, g, b, a] = PALETTE_RGB[idx] ?? [0, 0, 0, 0];
         const px = ((startY + y) * ATLAS_SIZE + (startX + x)) * 4;
         this.pixels[px] = r;
@@ -713,8 +725,8 @@ export class TextureAtlas {
     this.rects.set('solid', this.slotUv(0, 0));
 
     // Load default hero frames into mutable index buffers
-    this.loadHeroIndices(DEFAULT_HERO_FRAME_A, this.heroPixelsA);
-    this.loadHeroIndices(DEFAULT_HERO_FRAME_B, this.heroPixelsB);
+    parseGridToIndices(DEFAULT_HERO_FRAME_A, this.heroPixelsA);
+    parseGridToIndices(DEFAULT_HERO_FRAME_B, this.heroPixelsB);
     this.syncHeroSlots();
 
     const orderedIds: SpriteId[] = [
@@ -732,47 +744,22 @@ export class TextureAtlas {
       const row = Math.floor(slot / 16);
       const grid = BUILTIN_SPRITE_GRIDS[id];
       if (grid) {
-        this.writeIndexedGrid(col, row, grid);
+        this.blitIndexBuffer(col, row, parseGridToIndices(grid));
       }
       this.rects.set(id, this.slotUv(col, row));
       slot++;
     }
 
     // 32x16 wide boss UFO at row 2, col 0..1
-    this.writeIndexedGrid(0, 2, BOSS_UFO_GRID_32);
+    this.blitIndexBuffer(0, 2, parseGridToIndices(BOSS_UFO_GRID_32), 32, 16);
     this.rects.set('boss_ufo', this.slotUv(0, 2, 2, 1));
   }
 
-  private loadHeroIndices(grid: string[], out: Uint8Array) {
-    for (let y = 0; y < TILE_PX; y++) {
-      const rowStr = grid[y] ?? '';
-      for (let x = 0; x < TILE_PX; x++) {
-        out[y * TILE_PX + x] = CHAR_MAP[rowStr[x] ?? '.'] ?? 0;
-      }
-    }
-  }
-
   public syncHeroSlots() {
-    this.writeIndexedBuffer(1, 0, this.heroPixelsA);
-    this.writeIndexedBuffer(2, 0, this.heroPixelsB);
+    this.blitIndexBuffer(1, 0, this.heroPixelsA);
+    this.blitIndexBuffer(2, 0, this.heroPixelsB);
     this.rects.set('hero_a', this.slotUv(1, 0));
     this.rects.set('hero_b', this.slotUv(2, 0));
-  }
-
-  private writeIndexedBuffer(col: number, row: number, buf: Uint8Array) {
-    const startX = col * TILE_PX;
-    const startY = row * TILE_PX;
-    for (let y = 0; y < TILE_PX; y++) {
-      for (let x = 0; x < TILE_PX; x++) {
-        const idx = buf[y * TILE_PX + x] ?? 0;
-        const [r, g, b, a] = PALETTE_RGB[idx] ?? [0, 0, 0, 0];
-        const px = ((startY + y) * ATLAS_SIZE + (startX + x)) * 4;
-        this.pixels[px] = r;
-        this.pixels[px + 1] = g;
-        this.pixels[px + 2] = b;
-        this.pixels[px + 3] = a;
-      }
-    }
   }
 
   public getRect(id: SpriteId): SpriteRect {

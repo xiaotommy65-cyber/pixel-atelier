@@ -1,7 +1,14 @@
-import type { GpuBackendKind, GpuFrameStats, IGpuBackend, SkyGradient } from './GpuTypes';
+import {
+  FLOATS_PER_INSTANCE,
+  MAX_INSTANCES_PER_PASS,
+  type GpuBackendKind,
+  type GpuFrameStats,
+  type IGpuBackend,
+  type SkyGradient,
+} from './GpuTypes';
 import { TextureAtlas, type SpriteId } from './TextureAtlas';
 import { WebGl2Backend } from './WebGl2Backend';
-import { FLOATS_PER_INSTANCE, MAX_INSTANCES_PER_PASS, WebGpuBackend } from './WebGpuBackend';
+import { WebGpuBackend } from './WebGpuBackend';
 
 export function hexToRgb01(hex: string): [number, number, number] {
   const clean = hex.startsWith('#') ? hex.slice(1) : hex;
@@ -43,39 +50,36 @@ export class GpuEngine {
     this.atlas = atlas;
   }
 
+  private activateWebGl2(replaceCanvas: boolean): GpuBackendKind {
+    this.backend = null;
+    if (replaceCanvas && this.canvas.parentElement) {
+      const fresh = document.createElement('canvas');
+      fresh.className = this.canvas.className;
+      fresh.width = this.canvas.width;
+      fresh.height = this.canvas.height;
+      this.canvas.replaceWith(fresh);
+      this.canvas = fresh;
+    }
+    const gl2 = WebGl2Backend.tryCreate(
+      this.canvas,
+      this.atlas.width,
+      this.atlas.height,
+      this.atlas.pixels,
+    );
+    if (!gl2) return 'initializing';
+    this.backend = gl2;
+    this.lastStats.backend = 'webgl2';
+    this.onBackendChange?.('webgl2', this.canvas);
+    return 'webgl2';
+  }
+
   public async init(): Promise<GpuBackendKind> {
     const gpu = await WebGpuBackend.tryCreate(
       this.canvas,
       this.atlas.width,
       this.atlas.height,
       this.atlas.pixels,
-      () => {
-        // Auto-recover to WebGL2 if WebGPU device is lost or hits a runtime error.
-        // Because an HTMLCanvasElement locked to 'webgpu' cannot switch context type,
-        // clone a fresh canvas into the DOM when needed.
-        this.backend = null;
-        let targetCanvas = this.canvas;
-        if (this.canvas.parentElement) {
-          const fresh = document.createElement('canvas');
-          fresh.className = this.canvas.className;
-          fresh.width = this.canvas.width;
-          fresh.height = this.canvas.height;
-          this.canvas.replaceWith(fresh);
-          this.canvas = fresh;
-          targetCanvas = fresh;
-        }
-        const gl2 = WebGl2Backend.tryCreate(
-          targetCanvas,
-          this.atlas.width,
-          this.atlas.height,
-          this.atlas.pixels,
-        );
-        if (gl2) {
-          this.backend = gl2;
-          this.lastStats.backend = 'webgl2';
-          this.onBackendChange?.('webgl2', targetCanvas);
-        }
-      },
+      () => this.activateWebGl2(true),
     );
 
     if (gpu) {
@@ -85,20 +89,7 @@ export class GpuEngine {
       return 'webgpu';
     }
 
-    const gl2 = WebGl2Backend.tryCreate(
-      this.canvas,
-      this.atlas.width,
-      this.atlas.height,
-      this.atlas.pixels,
-    );
-    if (gl2) {
-      this.backend = gl2;
-      this.lastStats.backend = 'webgl2';
-      this.onBackendChange?.('webgl2');
-      return 'webgl2';
-    }
-
-    return 'initializing';
+    return this.activateWebGl2(false);
   }
 
   public syncAtlasToGpu(): void {

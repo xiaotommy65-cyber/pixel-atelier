@@ -38,6 +38,70 @@ export interface TagInteractionRule {
   onOverlap(source: RuleEntityLike, target: RuleEntityLike, world: RuleWorldActions, dt: number): void;
 }
 
+export function rectsOverlap(
+  ax: number,
+  ay: number,
+  aw: number,
+  ah: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  pad = 0,
+): boolean {
+  return (
+    ax + aw > bx - pad &&
+    ax < bx + bw + pad &&
+    ay + ah > by - pad &&
+    ay < by + bh + pad
+  );
+}
+
+export function igniteFlammable(target: RuleEntityLike, world: RuleWorldActions, fuseSec = 1.45): boolean {
+  if (target.tags.has('burning')) return false;
+  target.tags.add('burning');
+  target.fuseTimer = fuseSec;
+  target.flashTimer = 0.16;
+  target.lightRadius = 32;
+  target.lightColor = '#ff9048';
+  target.lightIntensity = 0.5;
+  world.emit('ignite');
+  world.spawnBurst(target.x + 8, target.y + 4, ['#ffd447', '#ff708d'], 5);
+  return true;
+}
+
+export function primeExplosive(target: RuleEntityLike, world: RuleWorldActions, fuseSec = 0.65): boolean {
+  if (target.active) return false;
+  target.active = true;
+  target.fuseTimer = fuseSec;
+  target.flashTimer = 0.18;
+  target.tags.add('burning');
+  world.emit('ignite');
+  world.spawnBurst(target.x + 8, target.y + 2, ['#ffd447', '#fffaf0'], 6);
+  return true;
+}
+
+export function activateSwitchPad(pad: RuleEntityLike, world: RuleWorldActions, burstCount = 8): boolean {
+  if (pad.active) return false;
+  pad.active = true;
+  pad.sprite = 'switch_on';
+  pad.lightColor = '#56d39c';
+  pad.lightIntensity = 0.58;
+  pad.flashTimer = 0.14;
+  world.unlockGates();
+  world.addScore(100);
+  world.emit('bounce');
+  world.spawnBurst(pad.x + 8, pad.y + 8, ['#56d39c', '#ffd447'], burstCount);
+  return true;
+}
+
+export function destroyFragile(target: RuleEntityLike, world: RuleWorldActions, burstCount = 10): void {
+  target.alive = false;
+  target.flashTimer = 0.14;
+  world.addScore(target.tags.has('enemy') ? 150 : 60);
+  world.spawnBurst(target.x + 8, target.y + 8, ['#ff708d', '#ffd447', '#fffaf0'], burstCount);
+}
+
 /**
  * Data-driven Tag x Tag interaction matrix (no entity-kind if/else chains).
  * New emergent interactions are added cleanly as declarative rules.
@@ -77,16 +141,7 @@ export const ENTITY_RULE_MATRIX: readonly TagInteractionRule[] = [
     sourceTag: 'burning',
     targetTag: 'flammable',
     onOverlap(_fire, target, world) {
-      if (!target.tags.has('burning')) {
-        target.tags.add('burning');
-        target.fuseTimer = 1.45;
-        target.flashTimer = 0.14;
-        target.lightRadius = 32;
-        target.lightColor = '#ff9048';
-        target.lightIntensity = 0.5;
-        world.emit('ignite');
-        world.spawnBurst(target.x + 8, target.y + 4, ['#ffd447', '#ff708d'], 5);
-      }
+      igniteFlammable(target, world, 1.45);
     },
   },
   {
@@ -94,14 +149,7 @@ export const ENTITY_RULE_MATRIX: readonly TagInteractionRule[] = [
     sourceTag: 'burning',
     targetTag: 'explosive',
     onOverlap(_fire, target, world) {
-      if (!target.active) {
-        target.active = true;
-        target.fuseTimer = 0.65;
-        target.flashTimer = 0.18;
-        target.tags.add('burning');
-        world.emit('ignite');
-        world.spawnBurst(target.x + 8, target.y + 2, ['#ffd447', '#fffaf0'], 6);
-      }
+      primeExplosive(target, world, 0.65);
     },
   },
   {
@@ -109,17 +157,7 @@ export const ENTITY_RULE_MATRIX: readonly TagInteractionRule[] = [
     sourceTag: 'pushable',
     targetTag: 'switch',
     onOverlap(_mover, pad, world) {
-      if (!pad.active) {
-        pad.active = true;
-        pad.sprite = 'switch_on';
-        pad.lightColor = '#56d39c';
-        pad.lightIntensity = 0.55;
-        pad.flashTimer = 0.14;
-        world.unlockGates();
-        world.addScore(100);
-        world.emit('bounce');
-        world.spawnBurst(pad.x + 8, pad.y + 8, ['#56d39c', '#ffd447'], 8);
-      }
+      activateSwitchPad(pad, world, 8);
     },
   },
   {
@@ -128,12 +166,9 @@ export const ENTITY_RULE_MATRIX: readonly TagInteractionRule[] = [
     targetTag: 'stompable',
     onOverlap(mover, foe, world) {
       if (Math.abs(mover.vx) > 45 || mover.vy > 70) {
-        foe.alive = false;
-        foe.flashTimer = 0.12;
-        world.addScore(150);
+        destroyFragile(foe, world, 10);
         world.emit('stomp');
         world.triggerJuice(0.035, 0.25);
-        world.spawnBurst(foe.x + 8, foe.y + 8, ['#ff708d', '#ffd447', '#fffaf0'], 10);
       }
     },
   },

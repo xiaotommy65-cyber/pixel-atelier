@@ -172,7 +172,7 @@ function createApp() {
   const gpuEngine = new GpuEngine(consoleView.canvas, updateGpuBadge, atlas);
 
   let switchStation: (next: StationId) => void = () => {};
-  const spriteAtelierView = new SpriteAtelierView(gpuEngine, synth, triggerMomoHappy);
+  const spriteAtelierView = new SpriteAtelierView(gpuEngine, synth, save, triggerMomoHappy);
   const workshopView = new WorkshopView(host, () => {
     switchStation('play');
     consoleView.insertCartridge('sandbox-toybox');

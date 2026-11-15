@@ -8,24 +8,48 @@ export interface CardRecord {
 
 const RECORDS_KEY = 'pixel-atelier-records-v1';
 const SHELL_KEY = 'pixel-atelier-shell-v1';
+const HERO_KEY = 'pixel-atelier-hero-v1';
+
+export interface HeroSpriteSave {
+  a?: number[];
+  b?: number[];
+}
 
 /**
- * Persistence boundary for player records and console preferences.
+ * Persistence boundary for player records, custom hero frames, and console preferences.
  */
 export class SaveService {
   private records: Partial<Record<CartridgeId, CardRecord>>;
 
   constructor() {
-    this.records = this.loadRecordsFromStorage();
+    this.records = this.readJson<Partial<Record<CartridgeId, CardRecord>>>(RECORDS_KEY) ?? {};
   }
 
-  private loadRecordsFromStorage(): Partial<Record<CartridgeId, CardRecord>> {
-    if (typeof localStorage === 'undefined') return {};
+  private readRaw(key: string): string | null {
+    if (typeof localStorage === 'undefined') return null;
     try {
-      const raw = localStorage.getItem(RECORDS_KEY);
-      return raw ? (JSON.parse(raw) as Partial<Record<CartridgeId, CardRecord>>) : {};
+      return localStorage.getItem(key);
     } catch {
-      return {};
+      return null;
+    }
+  }
+
+  private writeRaw(key: string, value: string): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Ignore quota errors
+    }
+  }
+
+  private readJson<T>(key: string): T | null {
+    const raw = this.readRaw(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
     }
   }
 
@@ -56,31 +80,23 @@ export class SaveService {
       return false;
     }
     this.records[id] = next;
-    if (typeof localStorage !== 'undefined') {
-      try {
-        localStorage.setItem(RECORDS_KEY, JSON.stringify(this.records));
-      } catch {
-        // Ignore quota errors
-      }
-    }
+    this.writeRaw(RECORDS_KEY, JSON.stringify(this.records));
     return true;
   }
 
   public getShellTheme(fallback = 'mint'): string {
-    if (typeof localStorage === 'undefined') return fallback;
-    try {
-      return localStorage.getItem(SHELL_KEY) ?? fallback;
-    } catch {
-      return fallback;
-    }
+    return this.readRaw(SHELL_KEY) ?? fallback;
   }
 
   public saveShellTheme(theme: string): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(SHELL_KEY, theme);
-    } catch {
-      // Ignore quota errors
-    }
+    this.writeRaw(SHELL_KEY, theme);
+  }
+
+  public getHeroSprites(): HeroSpriteSave | null {
+    return this.readJson<HeroSpriteSave>(HERO_KEY);
+  }
+
+  public saveHeroSprites(a: Uint8Array, b: Uint8Array): void {
+    this.writeRaw(HERO_KEY, JSON.stringify({ a: Array.from(a), b: Array.from(b) }));
   }
 }

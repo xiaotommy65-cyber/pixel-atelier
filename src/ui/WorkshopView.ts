@@ -1,6 +1,7 @@
 import { SANDBOX_DEFAULT_SCRIPT, WORKSHOP_RECIPES } from '../engine/CartridgeRegistry.ts';
 import type { EngineHost } from '../engine/EngineHost.ts';
 import { CARTRIDGE_PARAM_DEFS, DEFAULT_RUNTIME_PARAMS } from '../engine/WorldTypes.ts';
+import { btn, el } from './dom.ts';
 
 export class WorkshopView {
   public readonly element: HTMLElement;
@@ -19,52 +20,37 @@ export class WorkshopView {
 
     const runner = this.host.runner;
 
-    this.element = document.createElement('section');
-    this.element.className = 'studio-card';
+    this.element = el('section', 'studio-card');
 
-    const head = document.createElement('div');
-    head.className = 'studio-head';
+    const head = el('div', 'studio-head');
     head.innerHTML = `
       <div>
         <h2>🧱 積木工房（即時物理手感＆系統化關卡）</h2>
         <p class="studio-sub">微調物理手感滑桿，或點選右側「連鎖爆破」「暗影地牢」積木配方後套用開玩！</p>
       </div>
     `;
-    const resetBtn = document.createElement('button');
-    resetBtn.type = 'button';
-    resetBtn.className = 'toy-btn';
-    resetBtn.textContent = '↺ 恢復原廠參數';
-    resetBtn.addEventListener('click', () => {
-      this.host.playUiSound('snap');
-      const params = runner.getParams();
-      Object.assign(params, DEFAULT_RUNTIME_PARAMS);
-      this.syncSliders();
-    });
-    head.appendChild(resetBtn);
+    head.appendChild(
+      btn('toy-btn', '↺ 恢復原廠參數', undefined, () => {
+        this.host.playUiSound('snap');
+        Object.assign(runner.getParams(), DEFAULT_RUNTIME_PARAMS);
+        this.syncSliders();
+      }),
+    );
 
-    const cols = document.createElement('div');
-    cols.className = 'workshop-columns';
+    const cols = el('div', 'workshop-columns');
 
     // Left: Physics, Glow & Screen-Shake Dials
-    const paramList = document.createElement('div');
-    paramList.className = 'param-list';
+    const paramList = el('div', 'param-list');
 
     const params = runner.getParams();
     for (const def of CARTRIDGE_PARAM_DEFS) {
-      const box = document.createElement('div');
-      box.className = 'param-item';
-      const row = document.createElement('div');
-      row.className = 'param-row';
-      const label = document.createElement('span');
-      label.textContent = def.label;
-      const valEl = document.createElement('span');
-      valEl.className = 'param-val';
-      valEl.textContent = `${params[def.key]}${def.unit}`;
-      row.append(label, valEl);
+      const box = el('div', 'param-item');
+      const row = el('div', 'param-row');
+      const valEl = el('span', 'param-val', `${params[def.key]}${def.unit}`);
+      row.append(el('span', undefined, def.label), valEl);
 
-      const input = document.createElement('input');
+      const input = el('input', 'atelier-range');
       input.type = 'range';
-      input.className = 'atelier-range';
       input.min = String(def.min);
       input.max = String(def.max);
       input.step = String(def.step);
@@ -80,17 +66,17 @@ export class WorkshopView {
     }
 
     // Scanline cozy LCD toggle
-    const filterItem = document.createElement('label');
-    filterItem.className = 'param-item';
-    filterItem.style.flexDirection = 'row';
-    filterItem.style.justifyContent = 'space-between';
-    filterItem.style.alignItems = 'center';
-    filterItem.style.cursor = 'pointer';
-    const filterText = document.createElement('span');
+    const filterItem = el('label', 'param-item');
+    Object.assign(filterItem.style, {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      cursor: 'pointer',
+    });
+    const filterText = el('span', undefined, '✨ 掌機暖光 LCD 掃描紋理');
     filterText.style.fontSize = '0.84rem';
     filterText.style.fontWeight = '800';
-    filterText.textContent = '✨ 掌機暖光 LCD 掃描紋理';
-    this.filterCheck = document.createElement('input');
+    this.filterCheck = el('input');
     this.filterCheck.type = 'checkbox';
     this.filterCheck.checked = params.cozyFilter > 0.5;
     this.filterCheck.addEventListener('change', () => {
@@ -100,45 +86,31 @@ export class WorkshopView {
     paramList.appendChild(filterItem);
 
     // Right: Sandbox Code Editor
-    const scriptPane = document.createElement('div');
-    scriptPane.className = 'script-pane';
+    const scriptPane = el('div', 'script-pane');
 
-    const recipeRow = document.createElement('div');
-    recipeRow.className = 'tool-row';
+    const recipeRow = el('div', 'tool-row');
     for (const r of WORKSHOP_RECIPES) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'toy-btn is-honey';
-      btn.textContent = r.label;
-      btn.addEventListener('click', () => {
-        this.host.playUiSound('snap');
-        this.codeBox.value = r.code;
-      });
-      recipeRow.appendChild(btn);
+      recipeRow.appendChild(
+        btn('toy-btn is-honey', r.label, undefined, () => {
+          this.host.playUiSound('snap');
+          this.codeBox.value = r.code;
+        }),
+      );
     }
-    const defaultBtn = document.createElement('button');
-    defaultBtn.type = 'button';
-    defaultBtn.className = 'toy-btn';
-    defaultBtn.textContent = '📄 預設基地';
-    defaultBtn.addEventListener('click', () => {
-      this.host.playUiSound('snap');
-      this.codeBox.value = SANDBOX_DEFAULT_SCRIPT;
-    });
-    recipeRow.appendChild(defaultBtn);
+    recipeRow.appendChild(
+      btn('toy-btn', '📄 預設基地', undefined, () => {
+        this.host.playUiSound('snap');
+        this.codeBox.value = SANDBOX_DEFAULT_SCRIPT;
+      }),
+    );
 
-    this.codeBox = document.createElement('textarea');
-    this.codeBox.className = 'atelier-code';
+    this.codeBox = el('textarea', 'atelier-code');
     this.codeBox.spellcheck = false;
     this.codeBox.value = runner.getSandboxScript();
 
-    this.errorBox = document.createElement('div');
-    this.errorBox.className = 'script-error panel-hidden';
+    this.errorBox = el('div', 'script-error panel-hidden');
 
-    const applyBtn = document.createElement('button');
-    applyBtn.type = 'button';
-    applyBtn.className = 'toy-btn is-primary';
-    applyBtn.textContent = '▶ 套用積木程式並切換到遊玩台';
-    applyBtn.addEventListener('click', () => {
+    const applyBtn = btn('toy-btn is-primary', '▶ 套用積木程式並切換到遊玩台', undefined, () => {
       this.host.unlockAudio();
       const err = runner.applySandboxScript(this.codeBox.value);
       if (err) {

@@ -1,5 +1,6 @@
 import type { CartridgeId, CartridgeMeta } from '../engine/WorldTypes.ts';
-import { ATLAS_SIZE, type SpriteId, type TextureAtlas } from '../gpu/TextureAtlas.ts';
+import type { SpriteId, TextureAtlas } from '../gpu/TextureAtlas.ts';
+import { atlasSpriteToCanvas } from './MomoMascot.ts';
 
 interface ArtSpec {
   top: string;
@@ -49,30 +50,6 @@ const ART: Record<CartridgeId, ArtSpec> = {
 const W = 80;
 const H = 50;
 
-function spriteCanvas(atlas: TextureAtlas, id: SpriteId): HTMLCanvasElement {
-  const rect = atlas.getRect(id);
-  const sx = Math.floor(rect.u0 * ATLAS_SIZE);
-  const sy = Math.floor(rect.v0 * ATLAS_SIZE);
-  const c = document.createElement('canvas');
-  c.width = rect.w;
-  c.height = rect.h;
-  const ctx = c.getContext('2d');
-  if (!ctx) return c;
-  const img = ctx.createImageData(rect.w, rect.h);
-  for (let y = 0; y < rect.h; y++) {
-    for (let x = 0; x < rect.w; x++) {
-      const s = ((sy + y) * ATLAS_SIZE + (sx + x)) * 4;
-      const d = (y * rect.w + x) * 4;
-      img.data[d] = atlas.pixels[s];
-      img.data[d + 1] = atlas.pixels[s + 1];
-      img.data[d + 2] = atlas.pixels[s + 2];
-      img.data[d + 3] = atlas.pixels[s + 3];
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return c;
-}
-
 /** Paints a tiny pixel-art cartridge label from live atlas sprites (so the painted hero shows up). */
 export function renderCardArt(atlas: TextureAtlas, id: CartridgeId): string {
   const spec = ART[id];
@@ -90,7 +67,7 @@ export function renderCardArt(atlas: TextureAtlas, id: CartridgeId): string {
   ctx.fillRect(0, 0, W, H);
 
   if (spec.ground) {
-    const g = spriteCanvas(atlas, spec.ground);
+    const g = atlasSpriteToCanvas(atlas, spec.ground);
     for (let x = 0; x < W; x += 16) ctx.drawImage(g, x, H - 8, 16, 16);
   } else {
     ctx.fillStyle = '#fffaf0';
@@ -100,7 +77,7 @@ export function renderCardArt(atlas: TextureAtlas, id: CartridgeId): string {
   }
 
   for (const s of spec.sprites) {
-    const sc = spriteCanvas(atlas, s.id);
+    const sc = atlasSpriteToCanvas(atlas, s.id);
     const w = Math.round(sc.width * s.scale);
     const h = Math.round(sc.height * s.scale);
     ctx.save();

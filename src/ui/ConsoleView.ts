@@ -4,6 +4,7 @@ import type { CartridgeId, InputState, RenderSceneSnapshot } from '../engine/Wor
 import type { GpuFrameStats } from '../gpu/GpuTypes.ts';
 import type { TextureAtlas } from '../gpu/TextureAtlas.ts';
 import { renderCardArt } from './CardArt.ts';
+import { bindMomentaryButton, bindPointerDrag, btn, el } from './dom.ts';
 
 export type ConsolePhase = 'empty' | 'booting' | 'running';
 
@@ -15,13 +16,6 @@ type Dir = 'left' | 'right' | 'up' | 'down';
 
 function blankInput(): InputState {
   return { left: false, right: false, up: false, down: false, jump: false, action: false, restart: false };
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (cls) node.className = cls;
-  if (text !== undefined) node.textContent = text;
-  return node;
 }
 
 function pulseHaptic(ms = 9): void {
@@ -102,43 +96,32 @@ export class ConsoleView {
     const left = el('div', 'joycon is-left');
     left.appendChild(el('div', 'jc-rail-glow'));
 
-    const lBumper = el('button', 'jc-bumper is-l', 'L');
-    lBumper.type = 'button';
-    lBumper.title = 'L：重新開始當前卡匣';
-    lBumper.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      lBumper.classList.add('is-pressed');
+    const lBumper = btn('jc-bumper is-l', 'L', 'L：重新開始當前卡匣');
+    bindMomentaryButton(lBumper, () => {
       pulseHaptic(10);
       this.host.playUiSound('snap');
       if (this.phase !== 'empty') this.host.runner.restart();
     });
-    const clearLBumper = () => lBumper.classList.remove('is-pressed');
-    lBumper.addEventListener('pointerup', clearLBumper);
-    lBumper.addEventListener('pointercancel', clearLBumper);
-    lBumper.addEventListener('pointerleave', clearLBumper);
 
     const lTop = el('div', 'jc-row');
-    const minusBtn = el('button', 'jc-sys-btn', '−');
-    minusBtn.type = 'button';
-    minusBtn.title = '− 換下一張卡匣';
-    minusBtn.addEventListener('click', () => {
-      pulseHaptic(10);
-      this.cycleCard();
-    });
-    lTop.appendChild(minusBtn);
+    lTop.appendChild(
+      btn('jc-sys-btn', '−', '− 換下一張卡匣', () => {
+        pulseHaptic(10);
+        this.cycleCard();
+      }),
+    );
 
     const lStick = this.buildStick();
     const dirs = this.buildSlideDpad();
 
     const lBottom = el('div', 'jc-row');
-    const captureBtn = el('button', 'jc-sys-btn is-square', '◉');
-    captureBtn.type = 'button';
-    captureBtn.title = '截圖：儲存 PICO-8 風紀念卡匣 PNG';
-    captureBtn.addEventListener('click', () => {
-      pulseHaptic(12);
-      this.requestCapture();
-    });
-    lBottom.append(makeLeds(), captureBtn);
+    lBottom.append(
+      makeLeds(),
+      btn('jc-sys-btn is-square', '◉', '截圖：儲存 PICO-8 風紀念卡匣 PNG', () => {
+        pulseHaptic(12);
+        this.requestCapture();
+      }),
+    );
     left.append(lBumper, lTop, lStick, dirs, lBottom);
 
     // ---------- Console body ----------
@@ -154,9 +137,7 @@ export class ConsoleView {
     this.slotLed = el('span', 'slot-led');
     this.slotLed.title = '卡槽狀態指示燈';
     this.slotHint = el('span', 'slot-hint', DEFAULT_SLOT_HINT);
-    this.ejectBtn = el('button', 'eject-btn panel-hidden', '⏏ 退出卡匣');
-    this.ejectBtn.type = 'button';
-    this.ejectBtn.addEventListener('click', () => {
+    this.ejectBtn = btn('eject-btn panel-hidden', '⏏ 退出卡匣', undefined, () => {
       pulseHaptic(10);
       this.eject();
     });
@@ -185,9 +166,7 @@ export class ConsoleView {
     const card = el('div', 'overlay-card');
     this.resultTitle = el('h3');
     this.resultDesc = el('p');
-    const replayBtn = el('button', 'toy-btn is-primary', '✨ 再玩一次！');
-    replayBtn.type = 'button';
-    replayBtn.addEventListener('click', () => {
+    const replayBtn = btn('toy-btn is-primary', '✨ 再玩一次！', undefined, () => {
       pulseHaptic(10);
       this.host.playUiSound('snap');
       this.host.runner.restart();
@@ -206,9 +185,7 @@ export class ConsoleView {
       speakerR.appendChild(el('span'));
     }
     const legend = el('div', 'body-legend', 'B 跳躍 · A/R 火花 · X 精靈派對 · F3 碰撞框 · L/+ 重開 · ⌂ 退卡');
-    this.benchBtn = el('button', 'bench-btn', '✨ 1,150+ GPU 精靈派對');
-    this.benchBtn.type = 'button';
-    this.benchBtn.addEventListener('click', () => {
+    this.benchBtn = btn('bench-btn', '✨ 1,150+ GPU 精靈派對', undefined, () => {
       pulseHaptic(10);
       this.toggleBenchmark();
     });
@@ -223,40 +200,33 @@ export class ConsoleView {
     const rBumper = this.holdButton('jc-bumper is-r', 'R', 'action', 'R：火花 / 發射星光（等同 A 鍵）');
 
     const rTop = el('div', 'jc-row');
-    const plusBtn = el('button', 'jc-sys-btn', '+');
-    plusBtn.type = 'button';
-    plusBtn.title = '+ 重新開始這張卡匣';
-    plusBtn.addEventListener('click', () => {
-      pulseHaptic(10);
-      this.host.playUiSound('snap');
-      if (this.phase !== 'empty') this.host.runner.restart();
-    });
-    rTop.appendChild(plusBtn);
+    rTop.appendChild(
+      btn('jc-sys-btn', '+', '+ 重新開始這張卡匣', () => {
+        pulseHaptic(10);
+        this.host.playUiSound('snap');
+        if (this.phase !== 'empty') this.host.runner.restart();
+      }),
+    );
 
     const abxy = el('div', 'diamond is-abxy');
-    const xBtn = el('button', 'dia-btn is-x dia-n', 'X');
-    xBtn.type = 'button';
-    xBtn.title = 'X：1,150+ GPU 精靈派對';
-    xBtn.addEventListener('click', () => {
-      pulseHaptic(10);
-      this.toggleBenchmark();
-    });
     abxy.append(
-      xBtn,
+      btn('dia-btn is-x dia-n', 'X', 'X：1,150+ GPU 精靈派對', () => {
+        pulseHaptic(10);
+        this.toggleBenchmark();
+      }),
       this.holdButton('dia-btn is-y dia-w', 'Y', 'jump', 'Y：跳躍'),
       this.holdButton('dia-btn is-a dia-e', 'A', 'action', 'A：火花 / 引爆 / 特技'),
       this.holdButton('dia-btn is-b dia-s', 'B', 'jump', 'B：跳躍 / 發射'),
     );
     const rStick = this.buildStick();
     const rBottom = el('div', 'jc-row');
-    const homeBtn = el('button', 'jc-sys-btn is-home', '⌂');
-    homeBtn.type = 'button';
-    homeBtn.title = 'HOME：退出卡匣回到主畫面';
-    homeBtn.addEventListener('click', () => {
-      pulseHaptic(12);
-      this.eject();
-    });
-    rBottom.append(homeBtn, makeLeds());
+    rBottom.append(
+      btn('jc-sys-btn is-home', '⌂', 'HOME：退出卡匣回到主畫面', () => {
+        pulseHaptic(12);
+        this.eject();
+      }),
+      makeLeds(),
+    );
     right.append(rBumper, rTop, abxy, rStick, rBottom);
 
     consoleEl.append(left, body, right);
@@ -611,20 +581,19 @@ export class ConsoleView {
   }
 
   private bindCardDrag(card: HTMLElement, id: CartridgeId): void {
-    card.addEventListener('pointerdown', (e) => {
-      if (this.busy || card.classList.contains('is-out')) return;
-      e.preventDefault();
-      this.host.unlockAudio();
-      const sx = e.clientX;
-      const sy = e.clientY;
-      let dragging = false;
-      try {
-        card.setPointerCapture(e.pointerId);
-      } catch {
-        // Ignore capture errors on synthetic or unsupported pointer events
-      }
+    let sx = 0;
+    let sy = 0;
+    let dragging = false;
 
-      const move = (ev: PointerEvent) => {
+    bindPointerDrag(card, {
+      onStart: (e) => {
+        if (this.busy || card.classList.contains('is-out')) return false;
+        this.host.unlockAudio();
+        sx = e.clientX;
+        sy = e.clientY;
+        dragging = false;
+      },
+      onMove: (ev) => {
         const dx = ev.clientX - sx;
         const dy = ev.clientY - sy;
         if (!dragging && Math.hypot(dx, dy) > 8) {
@@ -635,11 +604,8 @@ export class ConsoleView {
           card.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx * 0.04}deg) scale(1.06)`;
           this.setDropHot(this.isOverDropZone(ev.clientX, ev.clientY));
         }
-      };
-      const up = (ev: PointerEvent) => {
-        card.removeEventListener('pointermove', move);
-        card.removeEventListener('pointerup', up);
-        card.removeEventListener('pointercancel', up);
+      },
+      onEnd: (ev) => {
         this.setDropHot(false);
         if (!dragging) {
           this.insertCartridge(id);
@@ -652,10 +618,7 @@ export class ConsoleView {
         } else {
           card.style.transform = '';
         }
-      };
-      card.addEventListener('pointermove', move);
-      card.addEventListener('pointerup', up);
-      card.addEventListener('pointercancel', up);
+      },
     });
   }
 
@@ -679,22 +642,12 @@ export class ConsoleView {
    */
   private buildSlideDpad(): HTMLElement {
     const pad = el('div', 'diamond is-dpad');
-    const upBtn = el('button', 'dia-btn dia-n', '▲');
-    const leftBtn = el('button', 'dia-btn dia-w', '◀');
-    const rightBtn = el('button', 'dia-btn dia-e', '▶');
-    const downBtn = el('button', 'dia-btn dia-s', '▼');
-    for (const [b, title] of [
-      [upBtn, '上'],
-      [leftBtn, '左'],
-      [rightBtn, '右'],
-      [downBtn, '下'],
-    ] as const) {
-      b.type = 'button';
-      b.title = title;
-    }
+    const upBtn = btn('dia-btn dia-n', '▲', '上');
+    const leftBtn = btn('dia-btn dia-w', '◀', '左');
+    const rightBtn = btn('dia-btn dia-e', '▶', '右');
+    const downBtn = btn('dia-btn dia-s', '▼', '下');
     pad.append(upBtn, leftBtn, rightBtn, downBtn);
 
-    let pid: number | null = null;
     const syncVisual = () => {
       upBtn.classList.toggle('is-pressed', this.padInput.up);
       leftBtn.classList.toggle('is-pressed', this.padInput.left);
@@ -727,52 +680,34 @@ export class ConsoleView {
       syncVisual();
     };
 
-    const clear = () => {
-      pid = null;
-      this.padInput = { left: false, right: false, up: false, down: false };
-      syncVisual();
-    };
-
-    pad.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.host.unlockAudio();
-      pid = e.pointerId;
-      try {
-        pad.setPointerCapture(e.pointerId);
-      } catch {
-        // Ignore capture errors on synthetic or unsupported pointer events
-      }
-      applyAt(e.clientX, e.clientY);
+    bindPointerDrag(pad, {
+      onStart: (e) => {
+        this.host.unlockAudio();
+        applyAt(e.clientX, e.clientY);
+      },
+      onMove: (e) => applyAt(e.clientX, e.clientY),
+      onEnd: () => {
+        this.padInput = { left: false, right: false, up: false, down: false };
+        syncVisual();
+      },
     });
-    pad.addEventListener('pointermove', (e) => {
-      if (pid === e.pointerId) applyAt(e.clientX, e.clientY);
-    });
-    pad.addEventListener('pointerup', clear);
-    pad.addEventListener('pointercancel', clear);
     return pad;
   }
 
   private holdButton(cls: string, label: string, key: keyof InputState, title: string): HTMLButtonElement {
-    const btn = el('button', cls, label);
-    btn.type = 'button';
-    btn.title = title;
-    const press = (e: Event) => {
-      e.preventDefault();
-      this.host.unlockAudio();
-      if (!this.touchInput[key]) pulseHaptic(8);
-      this.touchInput[key] = true;
-      btn.classList.add('is-pressed');
-    };
-    const release = (e: Event) => {
-      e.preventDefault();
-      this.touchInput[key] = false;
-      btn.classList.remove('is-pressed');
-    };
-    btn.addEventListener('pointerdown', press);
-    btn.addEventListener('pointerup', release);
-    btn.addEventListener('pointercancel', release);
-    btn.addEventListener('pointerleave', release);
-    return btn;
+    const b = btn(cls, label, title);
+    bindMomentaryButton(
+      b,
+      () => {
+        this.host.unlockAudio();
+        if (!this.touchInput[key]) pulseHaptic(8);
+        this.touchInput[key] = true;
+      },
+      () => {
+        this.touchInput[key] = false;
+      },
+    );
+    return b;
   }
 
   private buildStick(): HTMLElement {
@@ -780,7 +715,6 @@ export class ConsoleView {
     const knob = el('div', 'stick-knob');
     base.appendChild(knob);
     const maxR = 14;
-    let pid: number | null = null;
 
     const apply = (cx: number, cy: number) => {
       const r = base.getBoundingClientRect();
@@ -799,31 +733,21 @@ export class ConsoleView {
       this.stickInput.up = ny < -0.42;
       this.stickInput.down = ny > 0.42;
     };
-    const reset = () => {
-      pid = null;
-      base.classList.remove('is-active');
-      knob.style.transform = '';
-      this.stickInput = { left: false, right: false, up: false, down: false };
-    };
 
-    base.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.host.unlockAudio();
-      pulseHaptic(6);
-      pid = e.pointerId;
-      try {
-        base.setPointerCapture(e.pointerId);
-      } catch {
-        // Ignore capture errors on synthetic or unsupported pointer events
-      }
-      base.classList.add('is-active');
-      apply(e.clientX, e.clientY);
+    bindPointerDrag(base, {
+      onStart: (e) => {
+        this.host.unlockAudio();
+        pulseHaptic(6);
+        base.classList.add('is-active');
+        apply(e.clientX, e.clientY);
+      },
+      onMove: (e) => apply(e.clientX, e.clientY),
+      onEnd: () => {
+        base.classList.remove('is-active');
+        knob.style.transform = '';
+        this.stickInput = { left: false, right: false, up: false, down: false };
+      },
     });
-    base.addEventListener('pointermove', (e) => {
-      if (pid === e.pointerId) apply(e.clientX, e.clientY);
-    });
-    base.addEventListener('pointerup', reset);
-    base.addEventListener('pointercancel', reset);
     return base;
   }
 

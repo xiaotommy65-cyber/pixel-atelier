@@ -1,14 +1,15 @@
 import type { ToySynth } from '../audio/ToySynth.ts';
+import type { SaveService } from '../engine/SaveService.ts';
 import type { GpuEngine } from '../gpu/GpuEngine.ts';
 import {
   DEFAULT_HERO_FRAME_A,
   DEFAULT_HERO_FRAME_B,
-  PALETTE_RGB,
+  parseGridToIndices,
   TILE_PX,
   TOYBOX_PALETTE,
 } from '../gpu/TextureAtlas.ts';
-
-const HERO_STORAGE_KEY = 'pixel-atelier-hero-v1';
+import { drawIndexBufferToCanvas } from './MomoMascot.ts';
+import { btn, el } from './dom.ts';
 
 const BUNNY_PRESET_A: string[] = [
   '..11........11..',
@@ -86,17 +87,12 @@ const BEAR_PRESET_B: string[] = [
   '................',
 ];
 
-const CHAR_IDX: Record<string, number> = {
-  '.': 0,
-  '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
-  '8': 8, '9': 9, a: 10, b: 11, c: 12, d: 13, e: 14, f: 15,
-};
-
 export class SpriteAtelierView {
   public readonly element: HTMLElement;
 
   private gpu: GpuEngine;
   private synth: ToySynth;
+  private save: SaveService;
   private onHeroSaved?: () => void;
 
   private activeFrame: 'A' | 'B' = 'A';
@@ -114,17 +110,16 @@ export class SpriteAtelierView {
   private previewCanvas: HTMLCanvasElement;
   private animPhase = 0;
 
-  constructor(gpu: GpuEngine, synth: ToySynth, onHeroSaved?: () => void) {
+  constructor(gpu: GpuEngine, synth: ToySynth, save: SaveService, onHeroSaved?: () => void) {
     this.gpu = gpu;
     this.synth = synth;
+    this.save = save;
     this.onHeroSaved = onHeroSaved;
     this.restoreFromStorage();
 
-    this.element = document.createElement('section');
-    this.element.className = 'studio-card';
+    this.element = el('section', 'studio-card');
 
-    const head = document.createElement('div');
-    head.className = 'studio-head';
+    const head = el('div', 'studio-head');
     head.innerHTML = `
       <div>
         <h2>🎨 精靈畫室（16×16 主角造型工作台）</h2>
@@ -132,23 +127,13 @@ export class SpriteAtelierView {
       </div>
     `;
 
-    const frameSwitch = document.createElement('div');
-    frameSwitch.className = 'tool-row';
-    this.frameABtn = document.createElement('button');
-    this.frameABtn.type = 'button';
-    this.frameABtn.className = 'toy-btn is-active';
-    this.frameABtn.textContent = '動作 A（站立）';
-    this.frameABtn.addEventListener('click', () => {
+    const frameSwitch = el('div', 'tool-row');
+    this.frameABtn = btn('toy-btn is-active', '動作 A（站立）', undefined, () => {
       this.activeFrame = 'A';
       this.syncToolbarState();
       this.renderBoard();
     });
-
-    this.frameBBtn = document.createElement('button');
-    this.frameBBtn.type = 'button';
-    this.frameBBtn.className = 'toy-btn';
-    this.frameBBtn.textContent = '動作 B（跑步/跳躍）';
-    this.frameBBtn.addEventListener('click', () => {
+    this.frameBBtn = btn('toy-btn', '動作 B（跑步/跳躍）', undefined, () => {
       this.activeFrame = 'B';
       this.syncToolbarState();
       this.renderBoard();
@@ -156,12 +141,10 @@ export class SpriteAtelierView {
     frameSwitch.append(this.frameABtn, this.frameBBtn);
     head.appendChild(frameSwitch);
 
-    const layout = document.createElement('div');
-    layout.className = 'atelier-grid-layout';
+    const layout = el('div', 'atelier-grid-layout');
 
     // 16x16 Pixel Canvas Grid
-    const board = document.createElement('div');
-    board.className = 'pixel-board';
+    const board = el('div', 'pixel-board');
     board.addEventListener('pointerleave', () => {
       this.isDrawing = false;
     });
@@ -170,8 +153,7 @@ export class SpriteAtelierView {
     });
 
     for (let i = 0; i < TILE_PX * TILE_PX; i++) {
-      const cell = document.createElement('div');
-      cell.className = 'pixel-cell';
+      const cell = el('div', 'pixel-cell');
       const x = i % TILE_PX;
       const y = Math.floor(i / TILE_PX);
       cell.addEventListener('pointerdown', (e) => {
@@ -190,65 +172,49 @@ export class SpriteAtelierView {
     }
 
     // Sidebar controls
-    const sidebar = document.createElement('div');
-    sidebar.className = 'atelier-sidebar';
+    const sidebar = el('div', 'atelier-sidebar');
 
-    const previewStrip = document.createElement('div');
-    previewStrip.className = 'preview-strip';
-    this.previewCanvas = document.createElement('canvas');
-    this.previewCanvas.className = 'preview-canvas';
+    const previewStrip = el('div', 'preview-strip');
+    this.previewCanvas = el('canvas', 'preview-canvas');
     this.previewCanvas.width = 16;
     this.previewCanvas.height = 16;
-    const previewInfo = document.createElement('div');
+    const previewInfo = el('div');
     previewInfo.innerHTML =
       '<strong>即時動畫預覽</strong><div class="studio-sub">自動循環播放 A / B 動作影格</div>';
     previewStrip.append(this.previewCanvas, previewInfo);
 
     // 16-Color Master Palette
-    const paletteGrid = document.createElement('div');
-    paletteGrid.className = 'palette-grid';
+    const paletteGrid = el('div', 'palette-grid');
     TOYBOX_PALETTE.forEach((hex, idx) => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = idx === 0 ? 'palette-chip is-eraser' : 'palette-chip';
-      chip.title = idx === 0 ? '透明橡皮擦' : `色票 ${idx} (${hex})`;
+      const chip = btn(
+        idx === 0 ? 'palette-chip is-eraser' : 'palette-chip',
+        '',
+        idx === 0 ? '透明橡皮擦' : `色票 ${idx} (${hex})`,
+        () => {
+          this.synth.playPreset('snap');
+          this.selectedColor = idx;
+          this.syncPaletteSelection();
+        },
+      );
       if (idx > 0) chip.style.backgroundColor = hex;
-      chip.addEventListener('click', () => {
-        this.synth.playPreset('snap');
-        this.selectedColor = idx;
-        this.syncPaletteSelection();
-      });
       this.paletteEls.push(chip);
       paletteGrid.appendChild(chip);
     });
 
     // Paint Tools
-    const tools = document.createElement('div');
-    tools.className = 'tool-row';
+    const tools = el('div', 'tool-row');
 
-    this.mirrorBtn = document.createElement('button');
-    this.mirrorBtn.type = 'button';
-    this.mirrorBtn.className = 'toy-btn';
-    this.mirrorBtn.textContent = '🪞 左右對稱';
-    this.mirrorBtn.addEventListener('click', () => {
+    this.mirrorBtn = btn('toy-btn', '🪞 左右對稱', undefined, () => {
       this.mirrorX = !this.mirrorX;
       this.syncToolbarState();
     });
 
-    this.fillBtn = document.createElement('button');
-    this.fillBtn.type = 'button';
-    this.fillBtn.className = 'toy-btn';
-    this.fillBtn.textContent = '🪣 油漆桶填色';
-    this.fillBtn.addEventListener('click', () => {
+    this.fillBtn = btn('toy-btn', '🪣 油漆桶填色', undefined, () => {
       this.fillMode = !this.fillMode;
       this.syncToolbarState();
     });
 
-    const copyABtn = document.createElement('button');
-    copyABtn.type = 'button';
-    copyABtn.className = 'toy-btn';
-    copyABtn.textContent = '📋 複製 A→B';
-    copyABtn.addEventListener('click', () => {
+    const copyABtn = btn('toy-btn', '📋 複製 A→B', undefined, () => {
       this.gpu.atlas.heroPixelsB.set(this.gpu.atlas.heroPixelsA);
       this.commitAtlasUpdate();
       this.renderBoard();
@@ -257,22 +223,18 @@ export class SpriteAtelierView {
     tools.append(this.mirrorBtn, this.fillBtn, copyABtn);
 
     // Character Presets
-    const presetRow = document.createElement('div');
-    presetRow.className = 'tool-row';
+    const presetRow = el('div', 'tool-row');
     const addPresetBtn = (label: string, gridA: string[], gridB: string[]) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'toy-btn is-mint';
-      btn.textContent = label;
-      btn.addEventListener('click', () => {
-        this.synth.unlock();
-        this.synth.playPreset('star');
-        this.writeGridToBuffer(gridA, this.gpu.atlas.heroPixelsA);
-        this.writeGridToBuffer(gridB, this.gpu.atlas.heroPixelsB);
-        this.commitAtlasUpdate();
-        this.renderBoard();
-      });
-      presetRow.appendChild(btn);
+      presetRow.appendChild(
+        btn('toy-btn is-mint', label, undefined, () => {
+          this.synth.unlock();
+          this.synth.playPreset('star');
+          parseGridToIndices(gridA, this.gpu.atlas.heroPixelsA);
+          parseGridToIndices(gridB, this.gpu.atlas.heroPixelsB);
+          this.commitAtlasUpdate();
+          this.renderBoard();
+        }),
+      );
     };
     addPresetBtn('🌱 嫩芽騎士', DEFAULT_HERO_FRAME_A, DEFAULT_HERO_FRAME_B);
     addPresetBtn('🍓 草莓小兔', BUNNY_PRESET_A, BUNNY_PRESET_B);
@@ -285,15 +247,6 @@ export class SpriteAtelierView {
     this.syncPaletteSelection();
     this.syncToolbarState();
     this.renderBoard();
-  }
-
-  private writeGridToBuffer(grid: string[], out: Uint8Array): void {
-    for (let y = 0; y < TILE_PX; y++) {
-      const row = grid[y] ?? '';
-      for (let x = 0; x < TILE_PX; x++) {
-        out[y * TILE_PX + x] = CHAR_IDX[row[x] ?? '.'] ?? 0;
-      }
-    }
   }
 
   private getCurrentBuffer(): Uint8Array {
@@ -334,33 +287,20 @@ export class SpriteAtelierView {
 
   private commitAtlasUpdate(): void {
     this.gpu.syncAtlasToGpu();
-    try {
-      const payload = {
-        a: Array.from(this.gpu.atlas.heroPixelsA),
-        b: Array.from(this.gpu.atlas.heroPixelsB),
-      };
-      localStorage.setItem(HERO_STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // Ignore quota issues cleanly
-    }
+    this.save.saveHeroSprites(this.gpu.atlas.heroPixelsA, this.gpu.atlas.heroPixelsB);
     this.onHeroSaved?.();
   }
 
   private restoreFromStorage(): void {
-    try {
-      const raw = localStorage.getItem(HERO_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { a?: number[]; b?: number[] };
-      if (Array.isArray(parsed.a) && parsed.a.length === TILE_PX * TILE_PX) {
-        this.gpu.atlas.heroPixelsA.set(parsed.a);
-      }
-      if (Array.isArray(parsed.b) && parsed.b.length === TILE_PX * TILE_PX) {
-        this.gpu.atlas.heroPixelsB.set(parsed.b);
-      }
-      this.gpu.syncAtlasToGpu();
-    } catch {
-      // Ignore corrupted local cache
+    const parsed = this.save.getHeroSprites();
+    if (!parsed) return;
+    if (Array.isArray(parsed.a) && parsed.a.length === TILE_PX * TILE_PX) {
+      this.gpu.atlas.heroPixelsA.set(parsed.a);
     }
+    if (Array.isArray(parsed.b) && parsed.b.length === TILE_PX * TILE_PX) {
+      this.gpu.atlas.heroPixelsB.set(parsed.b);
+    }
+    this.gpu.syncAtlasToGpu();
   }
 
   private syncPaletteSelection(): void {
@@ -390,16 +330,6 @@ export class SpriteAtelierView {
       Math.floor(this.animPhase) % 2 === 0
         ? this.gpu.atlas.heroPixelsA
         : this.gpu.atlas.heroPixelsB;
-    const ctx = this.previewCanvas.getContext('2d');
-    if (!ctx) return;
-    const img = ctx.createImageData(TILE_PX, TILE_PX);
-    for (let i = 0; i < TILE_PX * TILE_PX; i++) {
-      const [r, g, b, a] = PALETTE_RGB[buf[i]] ?? [0, 0, 0, 0];
-      img.data[i * 4] = r;
-      img.data[i * 4 + 1] = g;
-      img.data[i * 4 + 2] = b;
-      img.data[i * 4 + 3] = a;
-    }
-    ctx.putImageData(img, 0, 0);
+    drawIndexBufferToCanvas(buf, this.previewCanvas);
   }
 }

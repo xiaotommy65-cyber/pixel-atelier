@@ -17,7 +17,16 @@ import type {
 import { ARCHETYPE_CATALOG, type ArchetypeId, type TraitTag } from './Archetypes.ts';
 import { InputMap } from './InputMap.ts';
 import { JuiceSystem, stepSquashSpring, type SquashSpring } from './JuiceSystem.ts';
-import { ENTITY_RULE_MATRIX, type RuleEntityLike, type RuleWorldActions } from './RuleMatrix.ts';
+import {
+  ENTITY_RULE_MATRIX,
+  activateSwitchPad,
+  destroyFragile,
+  igniteFlammable,
+  primeExplosive,
+  rectsOverlap,
+  type RuleEntityLike,
+  type RuleWorldActions,
+} from './RuleMatrix.ts';
 import { SeededRng } from './SeededRng.ts';
 
 export interface WorldEntity extends RuleEntityLike {
@@ -50,6 +59,8 @@ export interface WorldConfig {
   ambientColor?: string;
   statusBanner?: string;
 }
+
+const HERO_HB = { x: 2, y: 2, w: 12, h: 14 };
 
 /**
  * Shared 2D Platformer & Systemic Simulation Kernel.
@@ -192,7 +203,6 @@ export class WorldKernel {
     actions.triggerJuice(0.055, 0.65, '#fff4cc', 0.3);
     actions.spawnBurst(cx, cy, ['#ffd447', '#ff708d', '#fffaf0', '#f59b23'], 18);
 
-    // Damage / ignite / trigger nearby entities cleanly by TraitTag!
     for (const other of this.entities) {
       if (!other.alive || other.id === sourceId) continue;
       const dx = other.x + other.w * 0.5 - cx;
@@ -200,30 +210,10 @@ export class WorldKernel {
       const dist = Math.hypot(dx, dy);
       if (dist > radius) continue;
 
-      if (other.tags.has('explosive') && !other.active) {
-        // Staggered chain explosion!
-        other.active = true;
-        other.fuseTimer = 0.14;
-        other.flashTimer = 0.14;
-        other.tags.add('burning');
-        continue;
-      }
-
-      if (other.tags.has('switch') && !other.active) {
-        other.active = true;
-        other.sprite = 'switch_on';
-        other.lightColor = '#56d39c';
-        other.lightIntensity = 0.55;
-        actions.unlockGates();
-        actions.addScore(100);
-        continue;
-      }
-
+      if (other.tags.has('explosive') && primeExplosive(other, actions, 0.14)) continue;
+      if (other.tags.has('switch') && activateSwitchPad(other, actions, 8)) continue;
       if (other.tags.has('fragile')) {
-        other.alive = false;
-        other.flashTimer = 0.14;
-        actions.addScore(other.tags.has('enemy') ? 150 : 60);
-        actions.spawnBurst(other.x + 8, other.y + 8, ['#ffd447', '#ff708d'], 10);
+        destroyFragile(other, actions, 10);
       } else if (other.tags.has('pushable')) {
         const inv = dist > 1 ? 1 / dist : 1;
         other.vx += dx * inv * 140;
@@ -231,7 +221,7 @@ export class WorldKernel {
       }
     }
 
-    // Gentle playful knockback on hero without cheap insta-death unless right on top
+    // Gentle playful knockback on hero without cheap insta-death
     const hdx = this.heroX + 8 - cx;
     const hdy = this.heroY + 8 - cy;
     const hdist = Math.hypot(hdx, hdy);
@@ -332,28 +322,35 @@ export class WorldKernel {
   }
 
   private stepHero(dt: number, params: RuntimeParams, actions: RuleWorldActions): void {
+    this.stepHeroControls(dt, params, actions);
+    this.resolveHeroMotion(dt, actions);
+    this.rescueHeroFromAbyss(actions);
+    this.handleHeroEntityInteractions(params, actions);
+  }
+
+  private stepHeroControls(dt: number, params: RuntimeParams, actions: RuleWorldActions): void {
     const dir = this.input.axisX();
-    const maxSpd = params.moveSpeed;
     if (dir !== 0) {
       this.heroFacingLeft = dir < 0;
-      const targetVx = dir * maxSpd;
+      const targetVx = dir * params.moveSpeed;
       const accel = this.heroOnGround ? 960 : 640;
-      if (this.heroVx < targetVx) this.heroVx = Math.min(targetVx, this.heroVx + accel * dt);
-      else if (this.heroVx > targetVx) this.heroVx = Math.max(targetVx, this.heroVx - accel * dt);
+      this.heroVx =
+        this.heroVx < targetVx
+          ? Math.min(targetVx, this.heroVx + accel * dt)
+          : Math.max(targetVx, this.heroVx - accel * dt);
       this.heroWalkAnim += dt * 9;
     } else {
       const decel = this.heroOnGround ? 880 : 300;
-      if (this.heroVx > 0) this.heroVx = Math.max(0, this.heroVx - decel * dt);
-      else if (this.heroVx < 0) this.heroVx = Math.min(0, this.heroVx + decel * dt);
+      this.heroVx =
+        this.heroVx > 0
+          ? Math.max(0, this.heroVx - decel * dt)
+          : Math.min(0, this.heroVx + decel * dt);
     }
 
-    // InputMap tracks edge + buffer for jump & up!
     if (this.input.justPressed('jump') || this.input.justPressed('up')) {
       this.input.primeBuffer('jump', 0.13);
     }
-
-    if (this.heroOnGround) this.heroCoyote = 0.11;
-    else this.heroCoyote = Math.max(0, this.heroCoyote - dt);
+    this.heroCoyote = this.heroOnGround ? 0.11 : Math.max(0, this.heroCoyote - dt);
 
     if (this.input.hasBuffered('jump') && this.heroCoyote > 0) {
       this.input.consumeBuffer('jump');
@@ -365,16 +362,13 @@ export class WorldKernel {
       actions.spawnBurst(this.heroX + 8, this.heroY + 15, ['#fffaf0', '#56d39c'], 4);
     }
 
-    // Variable jump height cut
     if (!this.input.held('jump') && !this.input.held('up') && this.heroVy < -60) {
       this.heroVy *= 0.86;
     }
 
-    // Apex Hang Time (Celeste-style floatiness near jump peak)
     const apexBoost = !this.heroOnGround && Math.abs(this.heroVy) < 38 ? 0.56 : 1.0;
     this.heroVy = Math.min(340, this.heroVy + 590 * params.gravityScale * apexBoost * dt);
 
-    // Action button: shoots an igniting sparkle orb forward + festive spark!
     if (this.input.justPressed('action')) {
       const sign = this.heroFacingLeft ? -1 : 1;
       this.sparks.push({
@@ -388,58 +382,40 @@ export class WorldKernel {
       actions.emit('ignite');
       actions.spawnBurst(this.heroX + 8 + sign * 8, this.heroY + 7, ['#ffd447', '#fffaf0'], 4);
     }
+  }
 
-    // Horizontal motion + pushing 'pushable' crates/bombs
-    const hbX = 2;
-    const hbY = 2;
-    const hbW = 12;
-    const hbH = 14;
+  private resolveHeroMotion(dt: number, actions: RuleWorldActions): void {
+    const { x: hbX, y: hbY, w: hbW, h: hbH } = HERO_HB;
     const wasOnGround = this.heroOnGround;
 
     this.heroX = Math.max(0, Math.min(this.worldW - 16, this.heroX + this.heroVx * dt));
     for (const e of this.entities) {
       if (!e.alive || !e.tags.has('pushable')) continue;
-      if (
-        this.heroX + hbX + hbW > e.x &&
-        this.heroX + hbX < e.x + e.w &&
-        this.heroY + hbY + hbH > e.y + 3 &&
-        this.heroY + hbY < e.y + e.h - 2
-      ) {
-        if (this.heroVx > 0 && this.heroX < e.x) {
-          e.vx = Math.max(e.vx, Math.min(82, this.heroVx * 0.92));
-          this.heroX = e.x - hbX - hbW;
-        } else if (this.heroVx < 0 && this.heroX > e.x) {
-          e.vx = Math.min(e.vx, Math.max(-82, this.heroVx * 0.92));
-          this.heroX = e.x + e.w - hbX;
-        }
+      if (!rectsOverlap(this.heroX + hbX, this.heroY + hbY, hbW, hbH, e.x, e.y + 3, e.w, e.h - 5)) continue;
+      if (this.heroVx > 0 && this.heroX < e.x) {
+        e.vx = Math.max(e.vx, Math.min(82, this.heroVx * 0.92));
+        this.heroX = e.x - hbX - hbW;
+      } else if (this.heroVx < 0 && this.heroX > e.x) {
+        e.vx = Math.min(e.vx, Math.max(-82, this.heroVx * 0.92));
+        this.heroX = e.x + e.w - hbX;
       }
     }
 
     for (const s of this.solids) {
       if (s.kind === 'cloud') continue;
-      if (
-        this.heroX + hbX + hbW > s.x &&
-        this.heroX + hbX < s.x + s.w &&
-        this.heroY + hbY + hbH > s.y &&
-        this.heroY + hbY < s.y + s.h
-      ) {
-        if (this.heroVx > 0) this.heroX = s.x - hbX - hbW;
-        else if (this.heroVx < 0) this.heroX = s.x + s.w - hbX;
-        this.heroVx = 0;
-      }
+      if (!rectsOverlap(this.heroX + hbX, this.heroY + hbY, hbW, hbH, s.x, s.y, s.w, s.h)) continue;
+      if (this.heroVx > 0) this.heroX = s.x - hbX - hbW;
+      else if (this.heroVx < 0) this.heroX = s.x + s.w - hbX;
+      this.heroVx = 0;
     }
 
-    // Vertical motion + Corner Correction (4px head nudge) + landing squash
     const prevBottom = this.heroY + hbY + hbH;
     const preLandVy = this.heroVy;
     this.heroY += this.heroVy * dt;
     this.heroOnGround = false;
 
-    const allSolids = this.getSolidBoxes(true);
-    for (const s of allSolids) {
-      const overlapX = this.heroX + hbX + hbW > s.x && this.heroX + hbX < s.x + s.w;
-      if (!overlapX) continue;
-
+    for (const s of this.getSolidBoxes(true)) {
+      if (this.heroX + hbX + hbW <= s.x || this.heroX + hbX >= s.x + s.w) continue;
       if (s.kind === 'cloud') {
         if (this.heroVy >= 0 && prevBottom <= s.y + 5 && this.heroY + hbY + hbH >= s.y) {
           this.heroY = s.y - hbY - hbH;
@@ -448,21 +424,18 @@ export class WorldKernel {
         }
         continue;
       }
-
       if (this.heroY + hbY + hbH > s.y && this.heroY + hbY < s.y + s.h) {
         if (this.heroVy >= 0 && prevBottom <= s.y + 8) {
           this.heroY = s.y - hbY - hbH;
           this.heroVy = 0;
           this.heroOnGround = true;
         } else if (this.heroVy < 0) {
-          // Corner correction: if barely grazing ceiling corner by <= 4px, nudge sideways instead of bonking!
+          // 4px ceiling corner correction
           const leftClip = this.heroX + hbX + hbW - s.x;
           const rightClip = s.x + s.w - (this.heroX + hbX);
-          if (leftClip > 0 && leftClip <= 4) {
-            this.heroX -= leftClip;
-          } else if (rightClip > 0 && rightClip <= 4) {
-            this.heroX += rightClip;
-          } else {
+          if (leftClip > 0 && leftClip <= 4) this.heroX -= leftClip;
+          else if (rightClip > 0 && rightClip <= 4) this.heroX += rightClip;
+          else {
             this.heroY = s.y + s.h - hbY;
             this.heroVy = 0;
           }
@@ -475,24 +448,25 @@ export class WorldKernel {
       this.heroSquash = { scaleX: 1 + amt, scaleY: 1 - amt * 0.9 };
       actions.spawnBurst(this.heroX + 8, this.heroY + 15, ['#fffaf0', '#c7d4e6'], 3);
     }
+  }
 
-    // Rescue from abyss
-    if (this.heroY > this.worldH + 18) {
-      this.hearts--;
-      actions.emit('hurt');
-      actions.triggerJuice(0.06, 0.5, '#ff708d', 0.28);
-      if (this.hearts <= 0) {
-        this.status = 'lost';
-      } else {
-        this.heroX = Math.max(24, Math.min(this.heroX - 36, this.worldW - 40));
-        this.heroY = 48;
-        this.heroVx = 0;
-        this.heroVy = 0;
-        this.heroInvuln = 1.25;
-      }
+  private rescueHeroFromAbyss(actions: RuleWorldActions): void {
+    if (this.heroY <= this.worldH + 18) return;
+    this.hearts--;
+    actions.emit('hurt');
+    actions.triggerJuice(0.06, 0.5, '#ff708d', 0.28);
+    if (this.hearts <= 0) {
+      this.status = 'lost';
+      return;
     }
+    this.heroX = Math.max(24, Math.min(this.heroX - 36, this.worldW - 40));
+    this.heroY = 48;
+    this.heroVx = 0;
+    this.heroVy = 0;
+    this.heroInvuln = 1.25;
+  }
 
-    // Hero vs Entities by TraitTag
+  private handleHeroEntityInteractions(params: RuntimeParams, actions: RuleWorldActions): void {
     const hcx = this.heroX + 8;
     const hcy = this.heroY + 8;
 
@@ -509,10 +483,7 @@ export class WorldKernel {
         actions.addScore(100);
         actions.emit('star');
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#fffaf0', '#ff708d'], 9);
-        continue;
-      }
-
-      if (e.tags.has('key') && dist < 14) {
+      } else if (e.tags.has('key') && dist < 14) {
         e.alive = false;
         this.hasKey = true;
         actions.unlockGates();
@@ -520,10 +491,7 @@ export class WorldKernel {
         actions.emit('key');
         actions.triggerJuice(0.04, 0.22, '#ffd447', 0.22);
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#56d39c', '#fffaf0'], 14);
-        continue;
-      }
-
-      if (e.tags.has('bouncy') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
+      } else if (e.tags.has('bouncy') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
         this.heroVy = -params.jumpPower * 1.42;
         this.heroOnGround = false;
         this.heroSquash = { scaleX: 0.72, scaleY: 1.32 };
@@ -533,43 +501,24 @@ export class WorldKernel {
         actions.emit('bounce');
         actions.triggerJuice(0.02, 0.22);
         actions.spawnBurst(ecx, e.y + 4, ['#ff708d', '#ffd447', '#fffaf0'], 8);
-        continue;
-      }
-
-      if (e.tags.has('switch') && !e.active && dist < 13) {
-        e.active = true;
-        e.sprite = 'switch_on';
-        e.lightColor = '#56d39c';
-        e.lightIntensity = 0.58;
-        e.flashTimer = 0.14;
-        actions.unlockGates();
-        actions.addScore(100);
-        actions.emit('bounce');
-        actions.triggerJuice(0.03, 0.25);
-        actions.spawnBurst(ecx, ecy, ['#56d39c', '#ffd447'], 10);
-        continue;
-      }
-
-      if (e.tags.has('gate') && (this.gatesUnlocked || this.hasKey) && dist < 15) {
+      } else if (e.tags.has('switch') && dist < 13) {
+        if (activateSwitchPad(e, actions, 10)) {
+          actions.triggerJuice(0.03, 0.25);
+        }
+      } else if (e.tags.has('gate') && (this.gatesUnlocked || this.hasKey) && dist < 15) {
         this.status = 'won';
         actions.addScore(300);
         actions.emit('win');
         actions.triggerJuice(0.06, 0.4, '#fffaf0', 0.28);
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#56d39c', '#ff708d', '#5ec2f7'], 24);
-        continue;
-      }
-
-      if (e.tags.has('stompable') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
+      } else if (e.tags.has('stompable') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
         if (this.heroVy > 8 && hcy - ecy < 5) {
-          e.alive = false;
-          e.flashTimer = 0.15;
+          destroyFragile(e, actions, 12);
           this.heroVy = -params.jumpPower * 0.85;
           this.heroSquash = { scaleX: 1.24, scaleY: 0.76 };
           this.juice.registerCombo();
-          actions.addScore(150);
           actions.emit('stomp');
           actions.triggerJuice(0.04, 0.3, '#fffaf0', 0.14);
-          actions.spawnBurst(ecx, ecy, ['#ff708d', '#ffd447', '#fffaf0'], 12);
         } else if (this.heroInvuln <= 0) {
           this.hearts--;
           this.heroInvuln = 1.25;
@@ -598,40 +547,25 @@ export class WorldKernel {
         continue;
       }
 
-      // Check Spark vs Flammable / Explosive / Stompable entities!
       let hit = false;
       for (const e of this.entities) {
-        if (!e.alive) continue;
-        if (Math.hypot(sp.x - (e.x + 8), sp.y - (e.y + 8)) < 11) {
-          if (e.tags.has('explosive')) {
-            e.active = true;
-            e.fuseTimer = 0.45;
-            e.flashTimer = 0.16;
-            e.tags.add('burning');
-            actions.emit('ignite');
-            hit = true;
-            break;
-          }
-          if (e.tags.has('flammable') && !e.tags.has('burning')) {
-            e.tags.add('burning');
-            e.fuseTimer = 1.35;
-            e.flashTimer = 0.16;
-            e.lightRadius = 30;
-            e.lightColor = '#ff9048';
-            e.lightIntensity = 0.5;
-            actions.emit('ignite');
-            hit = true;
-            break;
-          }
-          if (e.tags.has('stompable')) {
-            e.flashTimer = 0.16;
-            e.vx = sp.vx > 0 ? 75 : -75;
-            e.vy = -120;
-            actions.emit('bounce');
-            actions.spawnBurst(e.x + 8, e.y + 8, ['#ffd447', '#fffaf0'], 6);
-            hit = true;
-            break;
-          }
+        if (!e.alive || Math.hypot(sp.x - (e.x + 8), sp.y - (e.y + 8)) >= 11) continue;
+        if (e.tags.has('explosive') && primeExplosive(e, actions, 0.45)) {
+          hit = true;
+          break;
+        }
+        if (e.tags.has('flammable') && igniteFlammable(e, actions, 1.35)) {
+          hit = true;
+          break;
+        }
+        if (e.tags.has('stompable')) {
+          e.flashTimer = 0.16;
+          e.vx = sp.vx > 0 ? 75 : -75;
+          e.vy = -120;
+          actions.emit('bounce');
+          actions.spawnBurst(e.x + 8, e.y + 8, ['#ffd447', '#fffaf0'], 6);
+          hit = true;
+          break;
         }
       }
       if (hit) this.sparks.splice(i, 1);
@@ -639,13 +573,11 @@ export class WorldKernel {
   }
 
   private stepEntities(dt: number, params: RuntimeParams, actions: RuleWorldActions): void {
-    // 1. Kinematics & Fuse timers
     for (const e of this.entities) {
       if (!e.alive) continue;
 
       if (e.fuseTimer !== undefined) {
         e.fuseTimer -= dt;
-        // Blink flash as fuse gets close
         if (e.fuseTimer < 0.45 && Math.floor(this.juice.visualTime * 18) % 2 === 0) {
           e.flashTimer = Math.max(e.flashTimer, 0.45);
         }
@@ -654,7 +586,8 @@ export class WorldKernel {
             e.alive = false;
             actions.detonateAt(e.x + 8, e.y + 8, 42, e.id);
             continue;
-          } else if (e.tags.has('burning')) {
+          }
+          if (e.tags.has('burning')) {
             e.alive = false;
             actions.addScore(40);
             actions.spawnBurst(e.x + 8, e.y + 8, ['#ff9048', '#ffd447', '#382820'], 10);
@@ -676,8 +609,7 @@ export class WorldKernel {
       } else if (e.tags.has('pushable')) {
         e.x = Math.max(0, Math.min(this.worldW - e.w, e.x + e.vx * dt));
         if (e.friction > 0) {
-          if (e.vx > 0) e.vx = Math.max(0, e.vx - e.friction * dt);
-          else if (e.vx < 0) e.vx = Math.min(0, e.vx + e.friction * dt);
+          e.vx = e.vx > 0 ? Math.max(0, e.vx - e.friction * dt) : Math.min(0, e.vx + e.friction * dt);
         }
       }
 
@@ -688,18 +620,12 @@ export class WorldKernel {
 
         for (const s of this.solids) {
           if (e.x + e.w - 2 <= s.x || e.x + 2 >= s.x + s.w) continue;
-          if (s.kind === 'cloud') {
-            if (e.vy >= 0 && prevBottom <= s.y + 5 && e.y + e.h >= s.y) {
-              e.y = s.y - e.h;
-              e.vy = 0;
-            }
-          } else if (e.y + e.h >= s.y && e.y < s.y + s.h && e.vy >= 0) {
+          const topHit = s.kind === 'cloud' ? prevBottom <= s.y + 5 : e.y < s.y + s.h;
+          if (e.vy >= 0 && topHit && e.y + e.h >= s.y) {
             e.y = s.y - e.h;
             e.vy = 0;
           }
         }
-
-        // Keep dynamic pushables stacked cleanly atop solid pushables (e.g., crate on crate)
         for (const other of this.entities) {
           if (!other.alive || other.id === e.id || !other.tags.has('solid')) continue;
           if (e.x + e.w - 2 <= other.x || e.x + 2 >= other.x + other.w) continue;
@@ -711,22 +637,13 @@ export class WorldKernel {
       }
     }
 
-    // 2. Evaluate Tag x Tag Interaction RuleMatrix!
     for (let i = 0; i < this.entities.length; i++) {
       const a = this.entities[i];
       if (!a.alive) continue;
       for (let j = 0; j < this.entities.length; j++) {
         if (i === j) continue;
         const b = this.entities[j];
-        if (!b.alive) continue;
-        if (
-          a.x + a.w <= b.x - 1 ||
-          a.x >= b.x + b.w + 1 ||
-          a.y + a.h <= b.y - 1 ||
-          a.y >= b.y + b.h + 1
-        ) {
-          continue;
-        }
+        if (!b.alive || !rectsOverlap(a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h, 1)) continue;
         for (const rule of ENTITY_RULE_MATRIX) {
           if (a.tags.has(rule.sourceTag) && b.tags.has(rule.targetTag)) {
             rule.onOverlap(a, b, actions, dt);

@@ -4,6 +4,7 @@ import {
   type SynthWaveform,
   type ToySynth,
 } from '../audio/ToySynth.ts';
+import { btn, el } from './dom.ts';
 
 const WAVE_OPTIONS: { id: SynthWaveform; label: string }[] = [
   { id: 'triangle', label: '🍦 奶霜三角波' },
@@ -31,11 +32,9 @@ export class SynthPianoView {
     this.synth = synth;
     this.onPlayReact = onPlayReact;
 
-    this.element = document.createElement('section');
-    this.element.className = 'studio-card';
+    this.element = el('section', 'studio-card');
 
-    const head = document.createElement('div');
-    head.className = 'studio-head';
+    const head = el('div', 'studio-head');
     head.innerHTML = `
       <div>
         <h2>🎹 晶片音效琴（Web Audio 零相依合成器）</h2>
@@ -44,62 +43,46 @@ export class SynthPianoView {
     `;
 
     // Waveform voices
-    const waveRow = document.createElement('div');
-    waveRow.className = 'tool-row';
+    const waveRow = el('div', 'tool-row');
     for (const w of WAVE_OPTIONS) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'toy-btn';
-      btn.textContent = w.label;
-      btn.addEventListener('click', () => {
+      const b = btn('toy-btn', w.label, undefined, () => {
         this.synth.unlock();
         this.synth.setWaveform(w.id);
         this.syncWaveButtons();
         this.synth.playNote(523.25, 0.25);
       });
-      this.waveBtns.set(w.id, btn);
-      waveRow.appendChild(btn);
+      this.waveBtns.set(w.id, b);
+      waveRow.appendChild(b);
     }
 
     // 8 Rainbow Piano Keys
-    const keysGrid = document.createElement('div');
-    keysGrid.className = 'piano-keys';
+    const keysGrid = el('div', 'piano-keys');
     for (const k of TOY_PIANO_KEYS) {
-      const keyBtn = document.createElement('button');
-      keyBtn.type = 'button';
-      keyBtn.className = 'piano-key';
+      const keyBtn = btn('piano-key', '');
       keyBtn.style.backgroundColor = k.color;
       keyBtn.innerHTML = `<span>${k.label}</span><span class="piano-note">${k.note}</span>`;
-      const playKey = () => {
+      keyBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
         this.synth.unlock();
         this.synth.playNote(k.freq, 0.36);
         keyBtn.classList.add('is-ringing');
         setTimeout(() => keyBtn.classList.remove('is-ringing'), 180);
         this.onPlayReact?.();
-      };
-      keyBtn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        playKey();
       });
       keysGrid.appendChild(keyBtn);
     }
 
     // SFX Preview Pads
-    const sfxTitle = document.createElement('strong');
-    sfxTitle.textContent = '遊戲音效試聽鈕';
-    const sfxGrid = document.createElement('div');
-    sfxGrid.className = 'sfx-grid';
+    const sfxTitle = el('strong', undefined, '遊戲音效試聽鈕');
+    const sfxGrid = el('div', 'sfx-grid');
     for (const sfx of SFX_LIST) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'toy-btn';
-      btn.textContent = sfx.label;
-      btn.addEventListener('click', () => {
-        this.synth.unlock();
-        this.synth.playPreset(sfx.preset);
-        this.onPlayReact?.();
-      });
-      sfxGrid.appendChild(btn);
+      sfxGrid.appendChild(
+        btn('toy-btn', sfx.label, undefined, () => {
+          this.synth.unlock();
+          this.synth.playPreset(sfx.preset);
+          this.onPlayReact?.();
+        }),
+      );
     }
 
     this.element.append(head, waveRow, keysGrid, sfxTitle, sfxGrid);

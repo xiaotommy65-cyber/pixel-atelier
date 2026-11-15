@@ -1,5 +1,11 @@
-import { GAME_H, GAME_W, type IGpuBackend, type SkyGradient } from './GpuTypes';
-import { FLOATS_PER_INSTANCE, MAX_INSTANCES_PER_PASS } from './WebGpuBackend';
+import {
+  FLOATS_PER_INSTANCE,
+  GAME_H,
+  GAME_W,
+  MAX_INSTANCES_PER_PASS,
+  type IGpuBackend,
+  type SkyGradient,
+} from './GpuTypes';
 
 const SKY_VS = `#version 300 es
 out vec2 vUv;
