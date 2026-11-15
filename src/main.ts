@@ -2,12 +2,14 @@ import './styles/atelier.css';
 import './styles/switch.css';
 
 import { ToySynth } from './audio/ToySynth.ts';
+import { getCartridgeMeta } from './engine/CartridgeRegistry.ts';
 import { CartridgeRunner } from './engine/CartridgeRunner.ts';
 import { SceneGpuBridge } from './engine/SceneGpuBridge.ts';
 import type { SimEvent } from './engine/WorldTypes.ts';
 import { GpuEngine } from './gpu/GpuEngine.ts';
 import type { GpuBackendKind } from './gpu/GpuTypes.ts';
 import { TextureAtlas } from './gpu/TextureAtlas.ts';
+import { exportCartridgeCardPng } from './ui/CardArt.ts';
 import { ConsoleView } from './ui/ConsoleView.ts';
 import { drawAtlasSpriteToCanvas } from './ui/MomoMascot.ts';
 import { SpriteAtelierView } from './ui/SpriteAtelierView.ts';
@@ -113,6 +115,7 @@ function createApp() {
       }
       localStorage.setItem(SHELL_STORAGE_KEY, theme.id);
       syncSwatches();
+      consoleView.playRailSnap();
     });
     swatchBtns.set(theme.id, btn);
     swatchBox.appendChild(btn);
@@ -271,16 +274,28 @@ function createApp() {
         const stats = bridge.render(gpuEngine, runner.getSnapshot(), null);
         consoleView.updateStats(stats, fpsSmooth);
       } else {
-        const stats = bridge.renderIdle(gpuEngine, now / 1000);
+        const stats = bridge.renderIdle(gpuEngine, now / 1000, consoleView.isAwakeIdle());
         consoleView.updateStats(stats, fpsSmooth);
       }
 
       if (consoleView.consumeCaptureRequest()) {
-        const dataUrl = consoleView.canvas.toDataURL('image/png');
+        const insertedId = consoleView.getInserted();
+        const meta = insertedId ? getCartridgeMeta(insertedId) : null;
+        const snap = runner.getSnapshot();
+        const dataUrl = exportCartridgeCardPng(
+          consoleView.canvas,
+          meta,
+          snap.score,
+          snap.starsCollected,
+          snap.starsTotal,
+        );
         const link = document.createElement('a');
         link.href = dataUrl;
-        link.download = `pixel-atelier-${Date.now()}.png`;
+        link.download = `pixel-atelier-${meta?.code.toLowerCase() ?? 'home'}-${Date.now()}.png`;
         link.click();
+        consoleView.showCaptureToast(
+          meta ? `📸 已匯出「${meta.code}」紀念卡匣截圖！` : '📸 已匯出主畫面紀念圖卡！',
+        );
       }
     } else if (activeStation === 'sprite') {
       spriteAtelierView.tickPreview(dt);

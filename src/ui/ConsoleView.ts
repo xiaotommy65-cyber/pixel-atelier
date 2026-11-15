@@ -8,8 +8,16 @@ import { renderCardArt } from './CardArt.ts';
 
 export type ConsolePhase = 'empty' | 'booting' | 'running';
 
+interface CardRecord {
+  bestScore: number;
+  bestStars: number;
+  starsTotal: number;
+}
+
 const BOOT_SEC = 1.35;
 const SLOT_CARD_W = 46;
+const RECORDS_KEY = 'pixel-atelier-records-v1';
+const DEFAULT_SLOT_HINT = '◀ 卡槽：把下面的卡匣拖進來！';
 
 type Dir = 'left' | 'right' | 'up' | 'down';
 
@@ -22,6 +30,15 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   if (cls) node.className = cls;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function loadRecords(): Partial<Record<CartridgeId, CardRecord>> {
+  try {
+    const raw = localStorage.getItem(RECORDS_KEY);
+    return raw ? (JSON.parse(raw) as Partial<Record<CartridgeId, CardRecord>>) : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -41,12 +58,18 @@ export class ConsoleView {
   private inserted: CartridgeId | null = null;
   private bootTimer = 0;
   private busy = false;
+  private dropHot = false;
   private captureRequested = false;
   private lastBannerState: 'playing' | 'won' | 'lost' = 'playing';
 
+  private consoleEl: HTMLElement;
+  private ledStrips: HTMLElement[] = [];
   private cardEls = new Map<CartridgeId, HTMLElement>();
   private cardArtImgs = new Map<CartridgeId, HTMLImageElement[]>();
+  private recordEls = new Map<CartridgeId, HTMLElement>();
+  private records: Partial<Record<CartridgeId, CardRecord>> = loadRecords();
   private slotEl: HTMLElement;
+  private slotLed: HTMLElement;
   private slotWindow: HTMLElement;
   private slotCardEl: HTMLElement | null = null;
   private slotHint: HTMLElement;
@@ -76,9 +99,18 @@ export class ConsoleView {
 
     this.element = el('section', 'switch-stage');
     const consoleEl = el('div', 'switch-console');
+    this.consoleEl = consoleEl;
+
+    const makeLeds = (): HTMLElement => {
+      const box = el('div', 'jc-leds');
+      for (let i = 0; i < 4; i++) box.appendChild(el('span'));
+      this.ledStrips.push(box);
+      return box;
+    };
 
     // ---------- Joy-Con L ----------
     const left = el('div', 'joycon is-left');
+    left.appendChild(el('div', 'jc-rail-glow'));
     const lTop = el('div', 'jc-row');
     const minusBtn = el('button', 'jc-sys-btn', '−');
     minusBtn.type = 'button';
@@ -98,9 +130,9 @@ export class ConsoleView {
     const lBottom = el('div', 'jc-row');
     const captureBtn = el('button', 'jc-sys-btn is-square', '◉');
     captureBtn.type = 'button';
-    captureBtn.title = '截圖：把現在的遊戲畫面存成 PNG';
+    captureBtn.title = '截圖：儲存 PICO-8 風紀念卡匣 PNG';
     captureBtn.addEventListener('click', () => this.requestCapture());
-    lBottom.appendChild(captureBtn);
+    lBottom.append(makeLeds(), captureBtn);
     left.append(lTop, lStick, dirs, lBottom);
 
     // ---------- Console body ----------
@@ -113,11 +145,13 @@ export class ConsoleView {
     this.slotEl.append(this.slotWindow, el('div', 'slot-mouth'));
 
     const slotSide = el('div', 'slot-side');
-    this.slotHint = el('span', 'slot-hint', '◀ 卡槽：把下面的卡匣拖進來！');
+    this.slotLed = el('span', 'slot-led');
+    this.slotLed.title = '卡槽狀態指示燈';
+    this.slotHint = el('span', 'slot-hint', DEFAULT_SLOT_HINT);
     this.ejectBtn = el('button', 'eject-btn panel-hidden', '⏏ 退出卡匣');
     this.ejectBtn.type = 'button';
     this.ejectBtn.addEventListener('click', () => this.eject());
-    slotSide.append(this.slotHint, this.ejectBtn);
+    slotSide.append(this.slotLed, this.slotHint, this.ejectBtn);
 
     const topbar = el('div', 'screen-topbar');
     const mLeft = el('div', 'screen-metrics');
@@ -172,6 +206,7 @@ export class ConsoleView {
 
     // ---------- Joy-Con R ----------
     const right = el('div', 'joycon is-right');
+    right.appendChild(el('div', 'jc-rail-glow'));
     const rTop = el('div', 'jc-row');
     const plusBtn = el('button', 'jc-sys-btn', '+');
     plusBtn.type = 'button';
@@ -200,7 +235,7 @@ export class ConsoleView {
     homeBtn.type = 'button';
     homeBtn.title = 'HOME：退出卡匣回到主畫面';
     homeBtn.addEventListener('click', () => this.eject());
-    rBottom.appendChild(homeBtn);
+    rBottom.append(homeBtn, makeLeds());
     right.append(rTop, abxy, rStick, rBottom);
 
     consoleEl.append(left, body, right);
@@ -221,12 +256,16 @@ export class ConsoleView {
       const art = el('img', 'card-art');
       art.alt = meta.title;
       art.draggable = false;
+      const recBadge = el('span', 'card-record');
+      this.recordEls.set(meta.id, recBadge);
       c.append(
         el('span', 'card-code', meta.code),
         art,
         el('span', 'card-title', meta.title),
         el('span', 'card-genre', meta.genre),
+        recBadge,
       );
+      this.renderRecordBadge(meta.id);
       this.registerArt(meta.id, art);
       this.bindCardDrag(c, meta.id);
       this.cardEls.set(meta.id, c);
@@ -249,6 +288,16 @@ export class ConsoleView {
     return this.inserted;
   }
 
+  public isAwakeIdle(): boolean {
+    return this.dropHot;
+  }
+
+  public playRailSnap(): void {
+    this.consoleEl.classList.remove('is-snapping');
+    void this.consoleEl.offsetWidth;
+    this.consoleEl.classList.add('is-snapping');
+  }
+
   public tick(dt: number): void {
     if (this.phase !== 'booting') return;
     this.bootTimer -= dt;
@@ -256,6 +305,7 @@ export class ConsoleView {
       this.phase = 'running';
       this.bootLayer?.remove();
       this.bootLayer = null;
+      this.syncStatusLights();
     }
   }
 
@@ -281,6 +331,12 @@ export class ConsoleView {
     const flash = el('div', 'capture-flash');
     this.screenFrame.appendChild(flash);
     setTimeout(() => flash.remove(), 420);
+  }
+
+  public showCaptureToast(msg: string): void {
+    const toast = el('div', 'capture-toast', msg);
+    this.screenFrame.appendChild(toast);
+    setTimeout(() => toast.remove(), 1850);
   }
 
   public consumeCaptureRequest(): boolean {
@@ -372,6 +428,10 @@ export class ConsoleView {
     this.updateStats(stats, fps);
     this.statusHintEl.textContent = snap.statusBanner;
 
+    if (this.inserted) {
+      this.saveRecord(this.inserted, snap);
+    }
+
     if (snap.status !== this.lastBannerState) {
       this.lastBannerState = snap.status;
       if (snap.status === 'won') {
@@ -396,6 +456,55 @@ export class ConsoleView {
 
   // ================= internals =================
 
+  private syncStatusLights(): void {
+    const isBoot = this.phase === 'booting';
+    const isRun = this.phase === 'running';
+    this.slotLed.classList.toggle('is-boot', isBoot);
+    this.slotLed.classList.toggle('is-run', isRun);
+    for (const strip of this.ledStrips) {
+      strip.classList.toggle('is-boot', isBoot);
+      strip.classList.toggle('is-run', isRun);
+    }
+  }
+
+  private renderRecordBadge(id: CartridgeId): void {
+    const badge = this.recordEls.get(id);
+    if (!badge) return;
+    const rec = this.records[id];
+    if (!rec) {
+      badge.textContent = 'NEW';
+      badge.classList.remove('is-played');
+    } else {
+      badge.textContent = `★${rec.bestStars}/${rec.starsTotal} · ${rec.bestScore}`;
+      badge.classList.add('is-played');
+    }
+  }
+
+  private saveRecord(id: CartridgeId, snap: RenderSceneSnapshot): void {
+    const prev = this.records[id];
+    const next: CardRecord = {
+      bestScore: Math.max(prev?.bestScore ?? 0, snap.score),
+      bestStars: Math.max(prev?.bestStars ?? 0, snap.starsCollected),
+      starsTotal: Math.max(prev?.starsTotal ?? 0, snap.starsTotal),
+    };
+    if (!prev || next.bestScore !== prev.bestScore || next.bestStars !== prev.bestStars || next.starsTotal !== prev.starsTotal) {
+      this.records[id] = next;
+      this.renderRecordBadge(id);
+      try {
+        localStorage.setItem(RECORDS_KEY, JSON.stringify(this.records));
+      } catch {
+        // Ignore storage quota errors
+      }
+    }
+  }
+
+  private setDropHot(hot: boolean): void {
+    if (this.dropHot === hot) return;
+    this.dropHot = hot;
+    this.slotEl.classList.toggle('is-hot', hot);
+    this.slotHint.textContent = hot ? '✨ 放開馬上插卡！' : DEFAULT_SLOT_HINT;
+  }
+
   private registerArt(id: CartridgeId, img: HTMLImageElement): void {
     const list = this.cardArtImgs.get(id) ?? [];
     list.push(img);
@@ -413,6 +522,8 @@ export class ConsoleView {
     this.slotHint.classList.add('panel-hidden');
     this.ejectBtn.classList.remove('panel-hidden');
     this.statusHintEl.textContent = meta.controlsHint;
+    this.syncStatusLights();
+    this.playRailSnap();
 
     this.bootLayer?.remove();
     const boot = el('div', 'screen-overlay boot-splash');
@@ -433,11 +544,13 @@ export class ConsoleView {
     this.insertPrompt.classList.remove('panel-hidden');
     this.resultOverlay.classList.add('panel-hidden');
     this.slotEl.classList.add('is-empty');
+    this.slotHint.textContent = DEFAULT_SLOT_HINT;
     this.slotHint.classList.remove('panel-hidden');
     this.ejectBtn.classList.add('panel-hidden');
     this.scoreTag.textContent = '分數 0';
     this.starTag.textContent = '★ 0/0';
     this.statusHintEl.textContent = '從卡匣收納盒挑一張遊戲卡插進主機吧！';
+    this.syncStatusLights();
   }
 
   private mountSlotCard(id: CartridgeId): void {
@@ -514,14 +627,14 @@ export class ConsoleView {
         }
         if (dragging) {
           card.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx * 0.04}deg) scale(1.06)`;
-          this.slotEl.classList.toggle('is-hot', this.isOverDropZone(ev.clientX, ev.clientY));
+          this.setDropHot(this.isOverDropZone(ev.clientX, ev.clientY));
         }
       };
       const up = (ev: PointerEvent) => {
         card.removeEventListener('pointermove', move);
         card.removeEventListener('pointerup', up);
         card.removeEventListener('pointercancel', up);
-        this.slotEl.classList.remove('is-hot');
+        this.setDropHot(false);
         if (!dragging) {
           this.insertCartridge(id);
           return;

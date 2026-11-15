@@ -1,4 +1,4 @@
-import type { CartridgeId } from '../engine/WorldTypes.ts';
+import type { CartridgeId, CartridgeMeta } from '../engine/WorldTypes.ts';
 import { ATLAS_SIZE, type SpriteId, type TextureAtlas } from '../gpu/TextureAtlas.ts';
 
 interface ArtSpec {
@@ -113,5 +113,134 @@ export function renderCardArt(atlas: TextureAtlas, id: CartridgeId): string {
     }
     ctx.restore();
   }
+  return c.toDataURL('image/png');
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/**
+ * Composites a PICO-8 inspired collectible cartridge frame around the live GPU canvas screenshot.
+ */
+export function exportCartridgeCardPng(
+  gameCanvas: HTMLCanvasElement,
+  meta: CartridgeMeta | null,
+  score: number,
+  starsCollected: number,
+  starsTotal: number,
+): string {
+  const cardW = 520;
+  const cardH = 382;
+  const c = document.createElement('canvas');
+  c.width = cardW;
+  c.height = cardH;
+  const ctx = c.getContext('2d');
+  if (!ctx) return gameCanvas.toDataURL('image/png');
+
+  const accent = meta?.accentHex ?? '#ff8fa8';
+  const ink = '#382820';
+
+  // Soft warm backdrop
+  ctx.fillStyle = '#f8f1e4';
+  ctx.fillRect(0, 0, cardW, cardH);
+
+  // Outer collectible cartridge silhouette with chamfered top-right corner
+  const pad = 12;
+  const bx = pad;
+  const by = pad;
+  const bw = cardW - pad * 2;
+  const bh = cardH - pad * 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx + 18, by);
+  ctx.lineTo(bx + bw - 38, by);
+  ctx.lineTo(bx + bw, by + 38);
+  ctx.lineTo(bx + bw, by + bh - 18);
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - 18, by + bh);
+  ctx.lineTo(bx + 18, by + bh);
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - 18);
+  ctx.lineTo(bx, by + 18);
+  ctx.quadraticCurveTo(bx, by, bx + 18, by);
+  ctx.closePath();
+  ctx.fillStyle = '#fffdf8';
+  ctx.fill();
+  ctx.clip();
+
+  // Accent top cartridge header strip
+  ctx.fillStyle = accent;
+  ctx.fillRect(bx, by, bw, 56);
+  ctx.fillStyle = ink;
+  ctx.fillRect(bx, by + 56, bw, 4);
+
+  ctx.restore();
+
+  // Cartridge outline
+  ctx.beginPath();
+  ctx.moveTo(bx + 18, by);
+  ctx.lineTo(bx + bw - 38, by);
+  ctx.lineTo(bx + bw, by + 38);
+  ctx.lineTo(bx + bw, by + bh - 18);
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - 18, by + bh);
+  ctx.lineTo(bx + 18, by + bh);
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - 18);
+  ctx.lineTo(bx, by + 18);
+  ctx.quadraticCurveTo(bx, by, bx + 18, by);
+  ctx.closePath();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = ink;
+  ctx.stroke();
+
+  // Header text
+  ctx.fillStyle = '#fffdf8';
+  ctx.font = 'bold 20px "JetBrains Mono", monospace';
+  ctx.fillText(meta ? `${meta.code} · ${meta.title}` : 'PIXEL ATELIER · HOME', bx + 20, by + 36);
+
+  // Gameplay frame inside bezel
+  const scrX = bx + 22;
+  const scrY = by + 72;
+  const scrW = bw - 44;
+  const scrH = Math.round((scrW * 9) / 16);
+
+  drawRoundedRect(ctx, scrX - 4, scrY - 4, scrW + 8, scrH + 8, 10);
+  ctx.fillStyle = '#1c1619';
+  ctx.fill();
+
+  ctx.save();
+  drawRoundedRect(ctx, scrX, scrY, scrW, scrH, 6);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(gameCanvas, scrX, scrY, scrW, scrH);
+  ctx.restore();
+
+  // Footer metadata
+  const footY = scrY + scrH + 30;
+  ctx.fillStyle = ink;
+  ctx.font = 'bold 15px "JetBrains Mono", monospace';
+  ctx.fillText('PIXEL ATELIER · GPU CARD', bx + 22, footY);
+
+  const statText = meta ? `SCORE ${score}  ★ ${starsCollected}/${starsTotal}` : 'MOMO IDLE HOME';
+  const metrics = ctx.measureText(statText);
+  ctx.fillStyle = '#755c4e';
+  ctx.fillText(statText, bx + bw - 22 - metrics.width, footY);
+
   return c.toDataURL('image/png');
 }

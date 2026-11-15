@@ -54,10 +54,93 @@
     0 8px 0 var(--ink);
 }
 
+.jc-rail-glow {
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent, #fffdf8, var(--accent-honey), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.joycon.is-left .jc-rail-glow {
+  right: 2px;
+}
+
+.joycon.is-right .jc-rail-glow {
+  left: 2px;
+}
+
+.switch-console.is-snapping .joycon.is-left {
+  animation: jcSnapL 340ms var(--ease-bounce);
+}
+
+.switch-console.is-snapping .joycon.is-right {
+  animation: jcSnapR 340ms var(--ease-bounce);
+}
+
+.switch-console.is-snapping .jc-rail-glow {
+  animation: jcRailBeam 420ms ease-out;
+}
+
+@keyframes jcSnapL {
+  0% { transform: translateY(-10px); }
+  55% { transform: translateY(2px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes jcSnapR {
+  0% { transform: translateY(10px); }
+  55% { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes jcRailBeam {
+  0% { opacity: 0; transform: scaleY(0.2); }
+  35% { opacity: 0.95; transform: scaleY(1); }
+  100% { opacity: 0; transform: scaleY(0.4); }
+}
+
+.jc-leds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.jc-leds span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(56, 40, 32, 0.25);
+  border: 1px solid rgba(56, 40, 32, 0.45);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.jc-leds.is-run span:first-child {
+  background: #a5ffcb;
+  border-color: var(--ink);
+  box-shadow: 0 0 6px #56d39c;
+}
+
+.jc-leds.is-boot span:first-child {
+  background: var(--accent-honey);
+  border-color: var(--ink);
+  animation: ledBlink 320ms ease-in-out infinite alternate;
+}
+
+@keyframes ledBlink {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
 .jc-row {
   width: 100%;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .joycon.is-left .jc-row {
@@ -261,22 +344,31 @@
 .slot-card {
   position: absolute;
   left: 6px;
-  top: 40px;
+  top: 28px;
   width: 46px;
   height: 60px;
   border-radius: 5px 11px 5px 5px;
   border: 2px solid var(--ink);
-  background: linear-gradient(var(--card-accent, #ff708d) 0 17px, #fffdf8 17px);
+  background: linear-gradient(var(--card-accent, #ff708d) 0 21px, #fffdf8 21px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 2px;
+  padding-top: 3px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.56rem;
   font-weight: 700;
   color: #fffdf8;
   cursor: pointer;
   animation: slotIn 420ms var(--ease-bounce);
+}
+
+.slot-card::after {
+  content: '';
+  width: 24px;
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 99px;
+  background: rgba(56, 40, 32, 0.25);
 }
 
 .slot-card.is-ejecting {
@@ -295,13 +387,34 @@
   100% { transform: translateY(-44px) rotate(-6deg); opacity: 0; }
 }
 
+.slot-led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: #6c5f63;
+  flex-shrink: 0;
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.slot-led.is-boot {
+  background: var(--accent-honey);
+  box-shadow: 0 0 8px var(--accent-honey);
+  animation: ledBlink 280ms ease-in-out infinite alternate;
+}
+
+.slot-led.is-run {
+  background: var(--accent-mint);
+  box-shadow: 0 0 8px var(--accent-mint);
+}
+
 .slot-side {
   position: absolute;
   top: -40px;
-  left: 92px;
+  left: 90px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   white-space: nowrap;
 }
 
@@ -480,6 +593,30 @@
 
 @keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
 
+.capture-toast {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 3px 0 var(--ink);
+  padding: 4px 12px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: toastPop 1.8s ease forwards;
+}
+
+@keyframes toastPop {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(0.9); }
+  12%, 82% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -4px) scale(0.96); }
+}
+
 .overlay-card {
   background: var(--bg-card);
   border: 3px solid var(--ink);
@@ -603,7 +740,7 @@
 .game-card {
   --card-accent: #ff708d;
   position: relative;
-  width: 108px;
+  width: 118px;
   border: 2.5px solid var(--ink);
   border-radius: 9px 22px 9px 9px;
   background: linear-gradient(var(--card-accent) 0 20px, #fffdf8 20px);
@@ -699,6 +836,23 @@
   color: var(--ink-soft);
 }
 
+.card-record {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: var(--bg-well);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.card-record.is-played {
+  background: #fff1b8;
+}
+
 /* ---------- Phone portrait: screen on top, Joy-Cons side by side ---------- */
 @media (max-width: 760px) {
   .switch-console {
@@ -742,6 +896,6 @@
 
   .game-card {
     flex-shrink: 0;
-    width: 98px;
+    width: 108px;
   }
 }

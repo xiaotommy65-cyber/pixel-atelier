@@ -6,8 +6,8 @@ import type { RenderSceneSnapshot } from './WorldTypes';
 
 export class SceneGpuBridge {
   /** Home screen shown while no game card is inserted. */
-  public renderIdle(gpu: GpuEngine, timeSec: number): GpuFrameStats {
-    gpu.beginFrame('#ffd3df', '#fff6e4', true);
+  public renderIdle(gpu: GpuEngine, timeSec: number, awake = false): GpuFrameStats {
+    gpu.beginFrame(awake ? '#ffc2d6' : '#ffd3df', '#fff6e4', true);
 
     for (let i = 0; i < 4; i++) {
       const span = GAME_W + 80;
@@ -21,17 +21,19 @@ export class SceneGpuBridge {
 
     const cx = GAME_W * 0.5;
     const cy = GAME_H * 0.42;
-    const bob = Math.sin(timeSec * 2.4) * 4;
-    gpu.drawLight(cx, cy + bob, 64, '#fff2cc', 0.55);
+    const bob = awake ? -Math.abs(Math.sin(timeSec * 8)) * 7 : Math.sin(timeSec * 2.4) * 4;
+    gpu.drawLight(cx, cy + bob, awake ? 82 : 64, '#fff2cc', awake ? 0.78 : 0.55);
     for (let i = 0; i < 6; i++) {
-      const ang = timeSec * 0.9 + (i * Math.PI) / 3;
-      gpu.drawSprite('star_a', cx + Math.cos(ang) * 72, cy + Math.sin(ang) * 34 + bob, {
-        w: 12,
-        h: 12,
+      const speed = awake ? 2.2 : 0.9;
+      const ang = timeSec * speed + (i * Math.PI) / 3;
+      gpu.drawSprite(awake && i % 2 === 0 ? 'sparkle' : 'star_a', cx + Math.cos(ang) * 72, cy + Math.sin(ang) * 34 + bob, {
+        w: awake ? 14 : 12,
+        h: awake ? 14 : 12,
         rot: ang,
       });
     }
-    const mood = Math.floor(timeSec * 1.5) % 3 === 0 ? 'momo_happy' : 'momo_idle';
+    const blinkCycle = timeSec % 4.0;
+    const mood = awake || blinkCycle < 0.45 ? 'momo_happy' : 'momo_idle';
     gpu.drawSprite(mood, cx, cy + bob, { w: 48, h: 48 });
     return gpu.flush(timeSec);
   }
