@@ -1,10 +1,12 @@
 import { CloudberryHopGame } from './cartridges/cloudberryHop.ts';
+import { DEFAULT_DND_MODULE_JSON, EmberkeepDndGame } from './cartridges/emberkeepDnd.ts';
 import { DEFAULT_SANDBOX_SCRIPT, SandboxToyboxGame } from './cartridges/sandboxToybox.ts';
 import { SugarStarlightGame } from './cartridges/sugarStarlight.ts';
 import type { CartridgeId, CartridgeInstance, CartridgeMeta, RuntimeParams } from './WorldTypes.ts';
 
 export interface CartridgeLaunchContext {
   sandboxScript: string;
+  dndModuleJson: string;
   params: RuntimeParams;
 }
 
@@ -14,6 +16,7 @@ const CARTRIDGE_FACTORIES = new Map<CartridgeId, CartridgeFactory>([
   ['cloudberry-hop', () => new CloudberryHopGame()],
   ['sugar-starlight', () => new SugarStarlightGame()],
   ['sandbox-toybox', (ctx) => new SandboxToyboxGame(ctx.sandboxScript, ctx.params)],
+  ['emberkeep-dnd', (ctx) => new EmberkeepDndGame(ctx.dndModuleJson)],
 ]);
 
 export function registerCartridgeFactory(id: CartridgeId, factory: CartridgeFactory): void {
@@ -26,6 +29,7 @@ export function createCartridgeInstance(id: CartridgeId, ctx: CartridgeLaunchCon
 }
 
 export const SANDBOX_DEFAULT_SCRIPT = DEFAULT_SANDBOX_SCRIPT;
+export const DND_DEFAULT_MODULE_JSON = DEFAULT_DND_MODULE_JSON;
 
 export interface WorkshopRecipe {
   label: string;
@@ -137,6 +141,18 @@ export const CARTRIDGES: readonly CartridgeMeta[] = [
     controlsHint: '← → 推箱移動・B 跳躍・A 發射火花引爆炸彈！',
     goalHint: '去「積木工房」試試「連鎖爆破」或「暗影地牢機關」配方！',
     defaultScript: DEFAULT_SANDBOX_SCRIPT,
+  },
+  {
+    id: 'emberkeep-dnd',
+    code: 'PA-04',
+    title: '龍與地城：餘燼',
+    subtitle: 'd20 回合探索與 AI 託管',
+    genre: 'CRPG 迷宮',
+    accentHex: '#e0aaff',
+    badgeText: 'd20 擲骰 × AI 代理',
+    controlsHint: '方向鍵探索・A/B 選單指令・點擊右上「🤖 AI 託管」自動代駕！',
+    goalHint: '通過法師檢定、開箱取鐵鑰匙開鎖、下 B2 擊敗餘燼幼龍！',
+    defaultScript: DEFAULT_DND_MODULE_JSON,
   },
 ];
 

@@ -4,9 +4,11 @@ import './styles/switch.css';
 import { ToySynth } from './audio/ToySynth.ts';
 import { getCartridgeMeta } from './engine/CartridgeRegistry.ts';
 import { CartridgeRunner } from './engine/CartridgeRunner.ts';
+import { createAgentBridge, type PixelAtelierAgentApi } from './engine/core/AgentBridge.ts';
 import { EngineHost } from './engine/EngineHost.ts';
 import { SaveService } from './engine/SaveService.ts';
 import { SceneGpuBridge } from './engine/SceneGpuBridge.ts';
+import type { CartridgeId } from './engine/WorldTypes.ts';
 import { GpuEngine } from './gpu/GpuEngine.ts';
 import type { GpuBackendKind } from './gpu/GpuTypes.ts';
 import { TextureAtlas } from './gpu/TextureAtlas.ts';
@@ -16,6 +18,12 @@ import { drawAtlasSpriteToCanvas } from './ui/MomoMascot.ts';
 import { SpriteAtelierView } from './ui/SpriteAtelierView.ts';
 import { SynthPianoView } from './ui/SynthPianoView.ts';
 import { WorkshopView } from './ui/WorkshopView.ts';
+
+declare global {
+  interface Window {
+    __PIXEL_ATELIER_AGENT__?: PixelAtelierAgentApi;
+  }
+}
 
 type StationId = 'play' | 'sprite' | 'workshop' | 'synth';
 type ShellTheme = 'mint' | 'berry' | 'honey' | 'sky';
@@ -143,7 +151,63 @@ function createApp() {
     if (!muted) synth.playPreset('snap');
   });
 
-  headerTools.append(gpuPill, swatchBox, muteBtn);
+  let activeStation: StationId = 'play';
+  let switchStation: (next: StationId) => void = () => {};
+  let handheldLandscape = false;
+
+  const landscapeBtn = document.createElement('button');
+  landscapeBtn.type = 'button';
+  landscapeBtn.className = 'toy-btn is-mint';
+  landscapeBtn.title = '一鍵切換橫屏掌機（即使手機開啟直立鎖定也可 90° 全螢幕遊玩）';
+  landscapeBtn.textContent = '⛶ 橫屏掌機';
+
+  const syncHandheldOrientation = () => {
+    shell.classList.toggle('is-handheld-landscape', handheldLandscape);
+    document.body.classList.toggle('is-handheld-lock', handheldLandscape);
+    const isPortraitViewport = window.innerHeight > window.innerWidth;
+    shell.classList.toggle('is-rotated-90', handheldLandscape && isPortraitViewport);
+    landscapeBtn.classList.toggle('is-active', handheldLandscape);
+    landscapeBtn.textContent = handheldLandscape ? '↩ 離開橫屏' : '⛶ 橫屏掌機';
+  };
+
+  const setHandheldLandscape = (next: boolean) => {
+    handheldLandscape = next;
+    if (next && activeStation !== 'play') {
+      switchStation('play');
+    }
+    syncHandheldOrientation();
+
+    const ori = screen.orientation as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
+    if (next) {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        void document.documentElement.requestFullscreen().catch(() => {});
+      }
+      if (ori?.lock) {
+        void ori.lock('landscape').catch(() => {});
+      }
+    } else {
+      if (ori?.unlock) {
+        try {
+          ori.unlock();
+        } catch {
+          // Ignore browsers rejecting unlock
+        }
+      }
+      if (document.fullscreenElement && document.exitFullscreen) {
+        void document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
+
+  landscapeBtn.addEventListener('click', () => {
+    host.playUiSound('snap');
+    setHandheldLandscape(!handheldLandscape);
+  });
+
+  window.addEventListener('resize', syncHandheldOrientation);
+  window.addEventListener('orientationchange', syncHandheldOrientation);
+
+  headerTools.append(gpuPill, swatchBox, muteBtn, landscapeBtn);
   header.append(brandCluster, headerTools);
 
   momoBtn.addEventListener('click', () => {
@@ -151,14 +215,16 @@ function createApp() {
     triggerMomoHappy();
   });
 
+  // Expose structured CRPG / Sandbox Agent API cleanly for browser DevTools & external AI coding Agents
+  window.__PIXEL_ATELIER_AGENT__ = createAgentBridge(runner);
+
   // Create Views
-  let activeStation: StationId = 'play';
   const nav = document.createElement('nav');
   nav.className = 'station-nav';
   const tabBtns = new Map<StationId, HTMLButtonElement>();
 
   const atlas = new TextureAtlas();
-  const consoleView = new ConsoleView(host, atlas);
+  const consoleView = new ConsoleView(host, atlas, () => setHandheldLandscape(false));
 
   const updateGpuBadge = (kind: GpuBackendKind, activeCanvas?: HTMLCanvasElement) => {
     if (activeCanvas) {
@@ -171,11 +237,10 @@ function createApp() {
 
   const gpuEngine = new GpuEngine(consoleView.canvas, updateGpuBadge, atlas);
 
-  let switchStation: (next: StationId) => void = () => {};
   const spriteAtelierView = new SpriteAtelierView(gpuEngine, synth, save, triggerMomoHappy);
-  const workshopView = new WorkshopView(host, () => {
+  const workshopView = new WorkshopView(host, (targetId: CartridgeId = 'sandbox-toybox') => {
     switchStation('play');
-    consoleView.insertCartridge('sandbox-toybox');
+    consoleView.insertCartridge(targetId);
   });
   const synthPianoView = new SynthPianoView(synth, triggerMomoHappy);
 

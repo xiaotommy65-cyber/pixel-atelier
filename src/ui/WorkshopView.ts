@@ -1,32 +1,40 @@
-import { SANDBOX_DEFAULT_SCRIPT, WORKSHOP_RECIPES } from '../engine/CartridgeRegistry.ts';
+import { DND_DEFAULT_MODULE_JSON, SANDBOX_DEFAULT_SCRIPT, WORKSHOP_RECIPES } from '../engine/CartridgeRegistry.ts';
 import type { EngineHost } from '../engine/EngineHost.ts';
+import type { CartridgeId } from '../engine/WorldTypes.ts';
 import { CARTRIDGE_PARAM_DEFS, DEFAULT_RUNTIME_PARAMS } from '../engine/WorldTypes.ts';
 import { btn, el } from './dom.ts';
+
+type WorkshopScriptMode = 'sandbox' | 'dnd';
 
 export class WorkshopView {
   public readonly element: HTMLElement;
 
   private host: EngineHost;
-  private onGoPlay?: () => void;
+  private onGoPlay?: (targetId?: CartridgeId) => void;
 
   private sliders = new Map<string, { input: HTMLInputElement; valEl: HTMLElement; unit: string }>();
   private filterCheck: HTMLInputElement;
   private codeBox: HTMLTextAreaElement;
   private errorBox: HTMLElement;
+  private mode: WorkshopScriptMode = 'sandbox';
+  private sandboxDraft: string;
+  private dndDraft: string;
 
-  constructor(host: EngineHost, onGoPlay?: () => void) {
+  constructor(host: EngineHost, onGoPlay?: (targetId?: CartridgeId) => void) {
     this.host = host;
     this.onGoPlay = onGoPlay;
 
     const runner = this.host.runner;
+    this.sandboxDraft = runner.getSandboxScript();
+    this.dndDraft = runner.getDndModuleJson();
 
     this.element = el('section', 'studio-card');
 
     const head = el('div', 'studio-head');
     head.innerHTML = `
       <div>
-        <h2>🧱 積木工房（即時物理手感＆系統化關卡）</h2>
-        <p class="studio-sub">微調物理手感滑桿，或點選右側「連鎖爆破」「暗影地牢」積木配方後套用開玩！</p>
+        <h2>🧱 積木工房（物理手感＆系統化劇本）</h2>
+        <p class="studio-sub">可微調物理參數、編寫 2D 積木腳本，或切換到 D&amp;D 地牢 JSON 劇本即時生成迷宮！</p>
       </div>
     `;
     head.appendChild(
@@ -85,15 +93,22 @@ export class WorkshopView {
     filterItem.append(filterText, this.filterCheck);
     paramList.appendChild(filterItem);
 
-    // Right: Sandbox Code Editor
+    // Right: Sandbox Code / D&D JSON Editor
     const scriptPane = el('div', 'script-pane');
 
+    const modeRow = el('div', 'tool-row');
+    const sandboxTab = btn('toy-btn is-active', '🧱 2D 物理積木');
+    const dndTab = btn('toy-btn', '🐉 D&D 地牢 JSON 劇本');
+    modeRow.append(sandboxTab, dndTab);
+
     const recipeRow = el('div', 'tool-row');
+    const dndRecipeRow = el('div', 'tool-row panel-hidden');
     for (const r of WORKSHOP_RECIPES) {
       recipeRow.appendChild(
         btn('toy-btn is-honey', r.label, undefined, () => {
           this.host.playUiSound('snap');
           this.codeBox.value = r.code;
+          this.sandboxDraft = r.code;
         }),
       );
     }
@@ -101,30 +116,80 @@ export class WorkshopView {
       btn('toy-btn', '📄 預設基地', undefined, () => {
         this.host.playUiSound('snap');
         this.codeBox.value = SANDBOX_DEFAULT_SCRIPT;
+        this.sandboxDraft = SANDBOX_DEFAULT_SCRIPT;
+      }),
+    );
+
+    dndRecipeRow.appendChild(
+      btn('toy-btn is-honey', '🐉 恢復預設餘燼迷宮 JSON', undefined, () => {
+        this.host.playUiSound('snap');
+        this.codeBox.value = DND_DEFAULT_MODULE_JSON;
+        this.dndDraft = DND_DEFAULT_MODULE_JSON;
       }),
     );
 
     this.codeBox = el('textarea', 'atelier-code');
     this.codeBox.spellcheck = false;
-    this.codeBox.value = runner.getSandboxScript();
+    this.codeBox.value = this.sandboxDraft;
 
     this.errorBox = el('div', 'script-error panel-hidden');
+    const applyBtn = btn('toy-btn is-primary', '▶ 套用積木程式並切換到遊玩台');
 
-    const applyBtn = btn('toy-btn is-primary', '▶ 套用積木程式並切換到遊玩台', undefined, () => {
+    const setMode = (next: WorkshopScriptMode) => {
+      if (this.mode === next) return;
+      if (this.mode === 'sandbox') this.sandboxDraft = this.codeBox.value;
+      else this.dndDraft = this.codeBox.value;
+
+      this.mode = next;
+      sandboxTab.classList.toggle('is-active', next === 'sandbox');
+      dndTab.classList.toggle('is-active', next === 'dnd');
+      recipeRow.classList.toggle('panel-hidden', next !== 'sandbox');
+      dndRecipeRow.classList.toggle('panel-hidden', next !== 'dnd');
+      this.errorBox.classList.add('panel-hidden');
+      this.codeBox.value = next === 'sandbox' ? this.sandboxDraft : this.dndDraft;
+      applyBtn.textContent =
+        next === 'sandbox' ? '▶ 套用積木程式並切換到遊玩台' : '🐉 套用 D&D 劇本並插卡開玩！';
+    };
+
+    sandboxTab.addEventListener('click', () => {
+      this.host.playUiSound('snap');
+      setMode('sandbox');
+    });
+    dndTab.addEventListener('click', () => {
+      this.host.playUiSound('snap');
+      setMode('dnd');
+    });
+
+    applyBtn.addEventListener('click', () => {
       this.host.unlockAudio();
-      const err = runner.applySandboxScript(this.codeBox.value);
-      if (err) {
-        this.errorBox.textContent = `積木執行小錯誤：${err}`;
-        this.errorBox.classList.remove('panel-hidden');
-        this.host.playUiSound('hurt');
+      if (this.mode === 'sandbox') {
+        this.sandboxDraft = this.codeBox.value;
+        const err = runner.applySandboxScript(this.codeBox.value);
+        if (err) {
+          this.errorBox.textContent = `積木執行小錯誤：${err}`;
+          this.errorBox.classList.remove('panel-hidden');
+          this.host.playUiSound('hurt');
+        } else {
+          this.errorBox.classList.add('panel-hidden');
+          this.host.playUiSound('key');
+          this.onGoPlay?.('sandbox-toybox');
+        }
       } else {
-        this.errorBox.classList.add('panel-hidden');
-        this.host.playUiSound('key');
-        this.onGoPlay?.();
+        this.dndDraft = this.codeBox.value;
+        const err = runner.applyDndModuleJson(this.codeBox.value);
+        if (err) {
+          this.errorBox.textContent = `D&D JSON 解析錯誤：${err}`;
+          this.errorBox.classList.remove('panel-hidden');
+          this.host.playUiSound('hurt');
+        } else {
+          this.errorBox.classList.add('panel-hidden');
+          this.host.playUiSound('key');
+          this.onGoPlay?.('emberkeep-dnd');
+        }
       }
     });
 
-    scriptPane.append(recipeRow, this.codeBox, this.errorBox, applyBtn);
+    scriptPane.append(modeRow, recipeRow, dndRecipeRow, this.codeBox, this.errorBox, applyBtn);
     cols.append(paramList, scriptPane);
     this.element.append(head, cols);
   }

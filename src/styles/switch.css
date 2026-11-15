@@ -1085,47 +1085,62 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 640px) and (orientation: portrait) {
   .joycon .stick {
     display: none;
   }
 }
 
 /* ---------- Phone landscape: horizontal 3-column Nintendo Switch ergonomics ---------- */
-@media (max-height: 540px) and (orientation: landscape) {
+@media (orientation: landscape) and (max-height: 620px), (orientation: landscape) and (pointer: coarse) and (max-width: 960px) {
+  .switch-stage {
+    gap: 8px;
+  }
+
   .switch-console {
-    grid-template-columns: 104px minmax(0, 1fr) 104px;
+    grid-template-columns: clamp(86px, 14vw, 108px) minmax(0, 1fr) clamp(86px, 14vw, 108px);
     grid-template-areas: 'left body right';
     gap: 0;
-    margin-top: 28px;
+    margin-top: 18px;
   }
 
   .cart-slot {
-    top: -58px;
-    left: 14px;
-    transform: scale(0.72);
+    top: -54px;
+    left: 12px;
+    transform: scale(0.7);
     transform-origin: bottom center;
   }
 
   .slot-side {
-    top: -27px;
-    left: 64px;
+    top: -24px;
+    left: 58px;
+    gap: 4px;
+  }
+
+  .slot-hint,
+  .eject-btn {
+    font-size: 0.62rem;
+    padding: 2px 7px;
+  }
+
+  .top-vol {
+    display: none;
   }
 
   .console-body {
     border-radius: 8px;
-    padding: 6px 7px 4px;
-    gap: 2px;
+    padding: 5px 7px 4px;
+    gap: 3px;
   }
 
   .screen-frame {
     width: 100%;
-    max-width: min(100%, calc((100dvh - 166px) * 16 / 9));
+    max-width: min(100%, calc((100dvh - 172px) * 16 / 9));
     margin: 0 auto;
   }
 
   .screen-topbar {
-    font-size: 0.6rem;
+    font-size: 0.58rem;
   }
 
   .screen-status-hint,
@@ -1141,55 +1156,55 @@
 
   .joycon.is-left {
     border-right: none;
-    border-radius: 40px 8px 8px 40px / 44px 8px 8px 44px;
+    border-radius: 36px 8px 8px 36px / 40px 8px 8px 40px;
   }
 
   .joycon.is-right {
     border-left: none;
-    border-radius: 8px 40px 40px 8px / 8px 44px 44px 8px;
+    border-radius: 8px 36px 36px 8px / 8px 40px 40px 8px;
   }
 
   .jc-bumper {
     top: -9px;
-    width: 48px;
+    width: 46px;
     height: 11px;
-    font-size: 0.56rem;
+    font-size: 0.54rem;
   }
 
   .joycon .stick {
     display: block;
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
   }
 
   .stick-knob {
-    width: 24px;
-    height: 24px;
-    margin: -12px 0 0 -12px;
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
   }
 
   .diamond {
-    grid-template-columns: repeat(3, 25px);
-    grid-template-rows: repeat(3, 25px);
+    grid-template-columns: repeat(3, 24px);
+    grid-template-rows: repeat(3, 24px);
     gap: 1.5px;
     padding: 2px;
   }
 
   .dia-btn {
-    width: 25px;
-    height: 25px;
-    font-size: 0.64rem;
+    width: 24px;
+    height: 24px;
+    font-size: 0.62rem;
   }
 
   .jc-sys-btn {
-    width: 20px;
-    height: 20px;
-    font-size: 0.72rem;
+    width: 19px;
+    height: 19px;
+    font-size: 0.7rem;
   }
 
   .jc-sys-btn.is-square {
-    width: 20px;
-    height: 20px;
+    width: 19px;
+    height: 19px;
   }
 
   .jc-sys-btn.is-home {
@@ -1197,4 +1212,264 @@
     height: 22px;
     font-size: 0.74rem;
   }
+}
+
+/* ---------- Handheld Fullscreen / Forced-90 Landscape Mode ---------- */
+.handheld-exit-btn {
+  display: none;
+  appearance: none;
+  border: 1.5px solid #ffd447;
+  border-radius: 999px;
+  background: rgba(255, 212, 71, 0.22);
+  color: #fff6d6;
+  font-size: 0.64rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.atelier-shell.is-handheld-landscape .handheld-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.atelier-shell.is-handheld-landscape .switch-stage {
+  height: 100%;
+  justify-content: center;
+  gap: 0;
+}
+
+.atelier-shell.is-handheld-landscape .card-case,
+.atelier-shell.is-handheld-landscape .cart-slot,
+.atelier-shell.is-handheld-landscape .slot-side,
+.atelier-shell.is-handheld-landscape .top-vol,
+.atelier-shell.is-handheld-landscape .screen-status-hint,
+.atelier-shell.is-handheld-landscape .body-legend,
+.atelier-shell.is-handheld-landscape .speaker {
+  display: none !important;
+}
+
+.atelier-shell.is-handheld-landscape .switch-console {
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  grid-template-columns: clamp(84px, 14%, 132px) minmax(0, 1fr) clamp(84px, 14%, 132px);
+  grid-template-areas: 'left body right';
+  gap: 0;
+  align-items: stretch;
+}
+
+.atelier-shell.is-handheld-landscape .console-body {
+  height: 100%;
+  min-height: 0;
+  border-radius: 10px;
+  padding: 5px 8px;
+  gap: 4px;
+  justify-content: space-between;
+}
+
+.atelier-shell.is-handheld-landscape .screen-frame {
+  width: min(100%, calc((var(--handheld-h, 100dvh) - 68px) * 16 / 9));
+  height: auto;
+  aspect-ratio: 16 / 9;
+  margin: auto;
+}
+
+.atelier-shell.is-handheld-landscape .joycon {
+  padding: 12px 6px 8px;
+  gap: 4px;
+  justify-content: space-between;
+}
+
+.atelier-shell.is-handheld-landscape .joycon.is-left {
+  border-right: none;
+  border-radius: 42px 8px 8px 42px / 48px 8px 8px 48px;
+}
+
+.atelier-shell.is-handheld-landscape .joycon.is-right {
+  border-left: none;
+  border-radius: 8px 42px 42px 8px / 8px 48px 48px 8px;
+}
+
+.atelier-shell.is-handheld-landscape .jc-bumper {
+  top: -4px;
+  width: 48px;
+  height: 11px;
+  font-size: 0.56rem;
+}
+
+.atelier-shell.is-handheld-landscape .joycon .stick {
+  display: block;
+  width: 38px;
+  height: 38px;
+}
+
+.atelier-shell.is-handheld-landscape .stick-knob {
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+}
+
+.atelier-shell.is-handheld-landscape .diamond {
+  grid-template-columns: repeat(3, 28px);
+  grid-template-rows: repeat(3, 28px);
+  gap: 1.5px;
+  padding: 3px;
+}
+
+.atelier-shell.is-handheld-landscape .dia-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 0.72rem;
+}
+
+.atelier-shell.is-handheld-landscape .jc-sys-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 0.72rem;
+}
+
+.atelier-shell.is-handheld-landscape .jc-sys-btn.is-square {
+  width: 20px;
+  height: 20px;
+}
+
+.atelier-shell.is-handheld-landscape .jc-sys-btn.is-home {
+  width: 22px;
+  height: 22px;
+  font-size: 0.74rem;
+}
+
+/* ---------- Turn-Based CRPG / D&D HUD Overlay (PA-04) ---------- */
+.rpg-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 5px 7px;
+  gap: 4px;
+}
+
+.rpg-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.rpg-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.rpg-pill {
+  background: rgba(18, 12, 28, 0.84);
+  border: 1.5px solid rgba(255, 212, 71, 0.55);
+  border-radius: 999px;
+  color: #fff6e6;
+  font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+  font-size: clamp(0.54rem, 1.35vw, 0.7rem);
+  font-weight: 700;
+  padding: 2px 7px;
+  line-height: 1.25;
+}
+
+.rpg-pill.is-enemy {
+  border-color: #ff708d;
+  color: #ffd6e0;
+}
+
+.rpg-agent-btn {
+  pointer-events: auto;
+  appearance: none;
+  border: 1.5px solid #56d39c;
+  border-radius: 999px;
+  background: rgba(18, 12, 28, 0.88);
+  color: #b9ffe0;
+  font-size: clamp(0.54rem, 1.35vw, 0.7rem);
+  font-weight: 800;
+  padding: 2px 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.rpg-agent-btn.is-on {
+  background: #56d39c;
+  color: #16241d;
+  box-shadow: 0 0 8px rgba(86, 211, 156, 0.65);
+}
+
+.rpg-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.rpg-log {
+  align-self: flex-start;
+  max-width: min(94%, 460px);
+  background: rgba(16, 10, 26, 0.78);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 3px 7px;
+  color: #ffe7b8;
+  font-size: clamp(0.52rem, 1.25vw, 0.66rem);
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: pre-line;
+  text-align: left;
+}
+
+.rpg-dialog {
+  background: rgba(22, 16, 36, 0.92);
+  border: 2px solid #ffd447;
+  border-radius: 10px;
+  padding: 5px 8px;
+  color: #fffdf8;
+  font-size: clamp(0.56rem, 1.35vw, 0.72rem);
+  font-weight: 700;
+  text-align: left;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+
+.rpg-actions {
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rpg-act-btn {
+  appearance: none;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  background: rgba(34, 24, 52, 0.9);
+  color: #fffdf8;
+  font-size: clamp(0.54rem, 1.3vw, 0.7rem);
+  font-weight: 800;
+  padding: 3px 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 100ms ease, border-color 120ms ease;
+}
+
+.rpg-act-btn.is-selected {
+  border-color: #ffd447;
+  background: #ffd447;
+  color: #382820;
+  transform: translateY(-1px);
+}
+
+.rpg-act-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }

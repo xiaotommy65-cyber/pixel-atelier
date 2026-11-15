@@ -1,5 +1,6 @@
 import { GAME_H, GAME_W } from '../gpu/GpuTypes.ts';
-import { createCartridgeInstance, SANDBOX_DEFAULT_SCRIPT } from './CartridgeRegistry.ts';
+import { createCartridgeInstance, DND_DEFAULT_MODULE_JSON, SANDBOX_DEFAULT_SCRIPT } from './CartridgeRegistry.ts';
+import { EmberkeepDndGame } from './cartridges/emberkeepDnd.ts';
 import { SandboxToyboxGame } from './cartridges/sandboxToybox.ts';
 import type {
   CartridgeId,
@@ -32,6 +33,7 @@ export class CartridgeRunner {
   private instance: CartridgeInstance;
   private params: RuntimeParams = { ...DEFAULT_RUNTIME_PARAMS };
   private sandboxScript = SANDBOX_DEFAULT_SCRIPT;
+  private dndModuleJson = DND_DEFAULT_MODULE_JSON;
   private accumulator = 0;
   private eventListener?: (ev: SimEvent, detail: SimEventDetail) => void;
   private prevRestart = false;
@@ -48,11 +50,16 @@ export class CartridgeRunner {
   private createInstance(id: CartridgeId): CartridgeInstance {
     const inst = createCartridgeInstance(id, {
       sandboxScript: this.sandboxScript,
+      dndModuleJson: this.dndModuleJson,
       params: this.params,
     });
     const maybeDebug = inst as CartridgeInstance & { setDebugHitboxes?: (b: boolean) => void };
     maybeDebug.setDebugHitboxes?.(this.debugHitboxes);
     return inst;
+  }
+
+  public getInstance(): CartridgeInstance {
+    return this.instance;
   }
 
   public setEventListener(listener: (ev: SimEvent, detail: SimEventDetail) => void): void {
@@ -96,6 +103,10 @@ export class CartridgeRunner {
     return this.sandboxScript;
   }
 
+  public getDndModuleJson(): string {
+    return this.dndModuleJson;
+  }
+
   public getSandboxError(): string | null {
     if (this.instance instanceof SandboxToyboxGame) {
       return this.instance.scriptError;
@@ -110,6 +121,28 @@ export class CartridgeRunner {
     this.instance = sb;
     this.accumulator = 0;
     return sb.scriptError ?? null;
+  }
+
+  public applyDndModuleJson(jsonSource: string): string | null {
+    const prev = this.dndModuleJson;
+    this.dndModuleJson = jsonSource;
+    const dnd = new EmberkeepDndGame(jsonSource);
+    if (dnd.scriptError) {
+      this.dndModuleJson = prev;
+      return dnd.scriptError;
+    }
+    dnd.setDebugHitboxes(this.debugHitboxes);
+    this.cartridgeId = 'emberkeep-dnd';
+    this.instance = dnd;
+    this.accumulator = 0;
+    return null;
+  }
+
+  public dispatchCommand(commandId: string): void {
+    const events = this.instance.dispatchCommand?.(commandId) ?? [];
+    for (const ev of events) {
+      this.eventListener?.(ev, { kind: ev, combo: 0 });
+    }
   }
 
   public toggleBenchmark(force?: boolean): boolean {

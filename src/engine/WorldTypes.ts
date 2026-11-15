@@ -1,6 +1,6 @@
 import type { SpriteId } from '../gpu/TextureAtlas.ts';
 
-export type CartridgeId = 'cloudberry-hop' | 'sugar-starlight' | 'sandbox-toybox';
+export type CartridgeId = 'cloudberry-hop' | 'sugar-starlight' | 'sandbox-toybox' | 'emberkeep-dnd';
 
 export type SimEvent =
   | 'jump'
@@ -12,7 +12,49 @@ export type SimEvent =
   | 'win'
   | 'bounce'
   | 'explode'
-  | 'ignite';
+  | 'ignite'
+  | 'snap';
+
+export interface RpgMenuOption {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface RpgHudSnapshot {
+  mode: 'explore' | 'combat' | 'dialog' | 'won' | 'lost';
+  floorName: string;
+  turnCount: number;
+  heroName: string;
+  level: number;
+  xp: number;
+  nextXp: number;
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  ac: number;
+  potions: number;
+  keys: number;
+  agentAuto: boolean;
+  combat?: {
+    enemyName: string;
+    enemyHp: number;
+    enemyMaxHp: number;
+    enemyAc: number;
+    round: number;
+    turnOwner: 'player' | 'enemy';
+  };
+  dialog?: {
+    speaker: string;
+    text: string;
+    choices: RpgMenuOption[];
+    selectedIdx: number;
+  };
+  actions: RpgMenuOption[];
+  selectedActionIdx: number;
+  combatLog: string[];
+}
 
 export interface SimEventDetail {
   kind: SimEvent;
@@ -179,12 +221,14 @@ export interface RenderSceneSnapshot {
   lights: LightDesc[];
   debugRects?: DebugRectDesc[];
   statusBanner: string;
+  rpgHud?: RpgHudSnapshot;
 }
 
 export interface CartridgeInstance {
   step(dt: number, input: InputState, params: RuntimeParams): SimEvent[];
   snapshot(params: RuntimeParams): RenderSceneSnapshot;
   getStatus(): 'playing' | 'won' | 'lost';
+  dispatchCommand?(commandId: string): SimEvent[];
 }
 
 export const DEFAULT_RUNTIME_PARAMS: RuntimeParams = {

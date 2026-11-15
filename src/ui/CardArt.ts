@@ -45,6 +45,17 @@ const ART: Record<CartridgeId, ArtSpec> = {
       { id: 'momo_idle', x: 12, y: 18, scale: 1.9 },
     ],
   },
+  'emberkeep-dnd': {
+    top: '#18102a',
+    bottom: '#3a224d',
+    ground: 'stone',
+    sprites: [
+      { id: 'torch', x: 6, y: 10, scale: 1 },
+      { id: 'chest_closed', x: 34, y: 28, scale: 1.1 },
+      { id: 'dragon', x: 52, y: 14, scale: 1.5 },
+      { id: 'hero_a', x: 10, y: 20, scale: 1.6 },
+    ],
+  },
 };
 
 const W = 80;

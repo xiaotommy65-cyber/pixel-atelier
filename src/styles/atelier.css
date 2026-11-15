@@ -635,7 +635,7 @@ textarea {
   }
 }
 
-@media (max-height: 540px) and (orientation: landscape) {
+@media (orientation: landscape) and (max-height: 620px), (orientation: landscape) and (pointer: coarse) and (max-width: 960px) {
   .atelier-shell {
     padding: 3px 10px 6px;
     gap: 3px;
@@ -645,6 +645,13 @@ textarea {
     padding: 3px 8px;
     border-radius: 12px;
     box-shadow: 0 3px 0 var(--ink);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .header-tools {
+    flex-wrap: nowrap;
+    gap: 5px;
   }
 
   .momo-badge {
@@ -660,6 +667,7 @@ textarea {
 
   .brand-title {
     font-size: 0.86rem;
+    white-space: nowrap;
   }
 
   .brand-sub {
@@ -669,6 +677,7 @@ textarea {
   .gpu-pill {
     padding: 2px 6px;
     font-size: 0.62rem;
+    white-space: nowrap;
   }
 
   .shell-swatch {
@@ -679,6 +688,7 @@ textarea {
   .toy-btn {
     padding: 2px 7px;
     font-size: 0.68rem;
+    white-space: nowrap;
   }
 
   .station-nav {
@@ -691,4 +701,46 @@ textarea {
     border-radius: 10px;
     box-shadow: 0 2px 0 var(--ink);
   }
+}
+
+/* ---------- Fullscreen / Forced-90 Handheld Landscape Mode ---------- */
+body.is-handheld-lock {
+  overflow: hidden;
+  height: 100dvh;
+  touch-action: none;
+}
+
+.atelier-shell.is-handheld-landscape {
+  --handheld-h: 100dvh;
+  --handheld-w: 100vw;
+  position: fixed;
+  inset: 0;
+  max-width: none;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+  padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  gap: 0;
+  z-index: 80;
+  background: var(--bg-desk);
+  justify-content: center;
+  overflow: hidden;
+}
+
+.atelier-shell.is-handheld-landscape.is-rotated-90 {
+  --handheld-h: 100vw;
+  --handheld-w: 100dvh;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  width: 100dvh;
+  height: 100vw;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center center;
+}
+
+.atelier-shell.is-handheld-landscape .atelier-header,
+.atelier-shell.is-handheld-landscape .station-nav {
+  display: none !important;
 }

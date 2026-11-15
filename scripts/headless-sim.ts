@@ -1,5 +1,6 @@
 import { CartridgeRunner, STEP_DT } from '../src/engine/CartridgeRunner.ts';
 import type { InputState } from '../src/engine/WorldTypes.ts';
+import { createAgentBridge } from '../src/engine/core/AgentBridge.ts';
 import { InputMap } from '../src/engine/core/InputMap.ts';
 import { JuiceSystem } from '../src/engine/core/JuiceSystem.ts';
 import { SeededRng } from '../src/engine/core/SeededRng.ts';
@@ -115,7 +116,7 @@ function testSystemicChainReactionAndDungeon() {
   const eventsSeen = new Set<string>();
   for (let frame = 0; frame < 150; frame++) {
     const inp = emptyInput();
-    if (frame === 15) inp.action = true; // Toss igniting spark at bomb #1 -> triggers bomb #2 -> destroys crate & triggers switch!
+    if (frame === 15) inp.action = true;
     const evs = runner.stepFixed(STEP_DT, inp);
     for (const ev of evs) eventsSeen.add(ev);
   }
@@ -129,7 +130,6 @@ function testSystemicChainReactionAndDungeon() {
     `[SIM OK] systemic dungeon chain reaction -> events=[${Array.from(eventsSeen).join(',')}], gateUnlocked=${snap.hasKey}, darkness=${snap.ambientDarkness}`,
   );
 
-  // Verify all Workshop recipes parse without error
   for (const recipe of WORKSHOP_RECIPES) {
     const rErr = runner.applySandboxScript(recipe.code);
     check(rErr === null, `Workshop recipe "${recipe.label}" should have zero script errors`);
@@ -157,12 +157,28 @@ function testSandboxAndGpuBenchmark() {
 
   const snap = runner.getSnapshot();
   check(snap.score >= 100, 'Sandbox hero should collect custom-placed star');
-  check(
-    runner.benchmarkSprites.length >= 1100,
-    'Sparkle party mode should maintain 1,100+ sprites',
-  );
+  check(runner.benchmarkSprites.length >= 1100, 'Sparkle party mode should maintain 1,100+ sprites');
   console.log(
     `[SIM OK] sandbox-toybox + benchmark -> score=${snap.score}, benchmarkSprites=${runner.benchmarkSprites.length}`,
+  );
+}
+
+function testEmberkeepDndAndAgentBridge() {
+  const runner = new CartridgeRunner('emberkeep-dnd');
+  const agent = createAgentBridge(runner);
+  check(agent.backendMode === 'static-client-no-server', 'AgentBridge should truthfully declare static client mode');
+  check(agent.listCartridges().includes('emberkeep-dnd'), 'PA-04 should be listed in cartridges');
+  check(agent.getLegalActions().length >= 2, 'TurnGridKernel should expose legal actions on start');
+
+  const res = agent.autoPlaySteps(280);
+  const obs = agent.getObservation() as { floorId: string; turnCount: number; hero: { level: number } };
+  check(res.stepsExecuted > 20, 'Built-in D&D Agent should execute autonomous turns');
+  check(res.snapshot.rpgHud !== undefined, 'PA-04 snapshot should expose structured rpgHud');
+  check(obs.floorId === 'floor-2', `Agent should descend to B2 floor-2 (got ${obs.floorId})`);
+  check(res.snapshot.status === 'won', `Agent should defeat Ember Wyrm Boss and win (got ${res.snapshot.status})`);
+  check(res.snapshot.score >= 1500, 'Winning D&D run should award high score');
+  console.log(
+    `[SIM OK] emberkeep-dnd + AgentBridge -> backend=${agent.backendMode}, steps=${res.stepsExecuted}, floor=${obs.floorId}, lv=${obs.hero.level}, score=${res.snapshot.score}, status=${res.snapshot.status}`,
   );
 }
 
@@ -171,4 +187,5 @@ testCloudberryHop();
 testSugarStarlight();
 testSystemicChainReactionAndDungeon();
 testSandboxAndGpuBenchmark();
-console.log('[SIM ALL PASSED] Pixel Atelier deterministic simulation, systemic rules & GPU batch check passed!');
+testEmberkeepDndAndAgentBridge();
+console.log('[SIM ALL PASSED] Pixel Atelier deterministic simulation, TurnGrid CRPG & AgentBridge check passed!');

@@ -1,6 +1,6 @@
 import { CARTRIDGES, getCartridgeMeta } from '../engine/CartridgeRegistry.ts';
 import type { EngineHost } from '../engine/EngineHost.ts';
-import type { CartridgeId, InputState, RenderSceneSnapshot } from '../engine/WorldTypes.ts';
+import type { CartridgeId, InputState, RenderSceneSnapshot, RpgHudSnapshot } from '../engine/WorldTypes.ts';
 import type { GpuFrameStats } from '../gpu/GpuTypes.ts';
 import type { TextureAtlas } from '../gpu/TextureAtlas.ts';
 import { renderCardArt } from './CardArt.ts';
@@ -36,7 +36,7 @@ type SlotState =
 /**
  * Switch-style handheld: Joy-Con (L) | screen body | Joy-Con (R),
  * with L/R shoulder bumpers, thumb-slide D-Pad, haptic tactile press travel,
- * top cartridge slot, and a game card case you tap or drag cards from.
+ * top cartridge slot, RPG HUD overlay for turn-based cartridges, and game card case.
  */
 export class ConsoleView {
   public readonly element: HTMLElement;
@@ -44,6 +44,7 @@ export class ConsoleView {
 
   private host: EngineHost;
   private atlas: TextureAtlas;
+  private onExitLandscape?: () => void;
 
   private slotState: SlotState = { phase: 'empty' };
   private busy = false;
@@ -62,7 +63,17 @@ export class ConsoleView {
   private slotCardEl: HTMLElement | null = null;
   private slotHint: HTMLElement;
   private ejectBtn: HTMLButtonElement;
+  private exitLandscapeBtn: HTMLButtonElement;
   private screenFrame: HTMLElement;
+  private rpgHudEl: HTMLElement;
+  private rpgFloorEl: HTMLElement;
+  private rpgStatsEl: HTMLElement;
+  private rpgEnemyEl: HTMLElement;
+  private rpgAgentBtn: HTMLButtonElement;
+  private rpgLogEl: HTMLElement;
+  private rpgDialogEl: HTMLElement;
+  private rpgActionsEl: HTMLElement;
+  private lastRpgActionsKey = '';
   private insertPrompt: HTMLElement;
   private bootLayer: HTMLElement | null = null;
   private resultOverlay: HTMLElement;
@@ -80,9 +91,10 @@ export class ConsoleView {
   private keyInput = blankInput();
   private stickInput: Record<Dir, boolean> = { left: false, right: false, up: false, down: false };
 
-  constructor(host: EngineHost, atlas: TextureAtlas) {
+  constructor(host: EngineHost, atlas: TextureAtlas, onExitLandscape?: () => void) {
     this.host = host;
     this.atlas = atlas;
+    this.onExitLandscape = onExitLandscape;
 
     this.element = el('section', 'switch-stage');
     const consoleEl = el('div', 'switch-console');
@@ -154,13 +166,42 @@ export class ConsoleView {
     const mRight = el('div', 'screen-metrics');
     this.spriteStatTag = el('span', 'metric-tag', '精靈 0 · 0 draws');
     this.fpsTag = el('span', 'metric-tag', '60 FPS');
-    mRight.append(this.spriteStatTag, this.fpsTag);
+    this.exitLandscapeBtn = btn('handheld-exit-btn', '↩ 離開橫屏', '離開全螢幕橫屏掌機模式', () => {
+      pulseHaptic(10);
+      this.host.playUiSound('snap');
+      this.onExitLandscape?.();
+    });
+    mRight.append(this.spriteStatTag, this.fpsTag, this.exitLandscapeBtn);
     topbar.append(mLeft, mRight);
 
     this.screenFrame = el('div', 'screen-frame');
     this.canvas = el('canvas', 'game-canvas');
     this.canvas.width = 960;
     this.canvas.height = 540;
+
+    // Structured CRPG HUD Overlay (only active when cartridge returns rpgHud, e.g. PA-04 D&D)
+    this.rpgHudEl = el('div', 'rpg-hud panel-hidden');
+    const rpgTop = el('div', 'rpg-top');
+    const rpgTopLeft = el('div', 'rpg-cluster');
+    this.rpgFloorEl = el('span', 'rpg-pill is-floor');
+    this.rpgStatsEl = el('span', 'rpg-pill is-stats');
+    rpgTopLeft.append(this.rpgFloorEl, this.rpgStatsEl);
+    const rpgTopRight = el('div', 'rpg-cluster');
+    this.rpgEnemyEl = el('span', 'rpg-pill is-enemy panel-hidden');
+    this.rpgAgentBtn = btn('rpg-agent-btn', '🤖 AI 託管', '開啟／關閉內建探索戰鬥 AI 代理', () => {
+      pulseHaptic(8);
+      this.host.unlockAudio();
+      this.host.runner.dispatchCommand('toggle_agent');
+    });
+    rpgTopRight.append(this.rpgEnemyEl, this.rpgAgentBtn);
+    rpgTop.append(rpgTopLeft, rpgTopRight);
+
+    const rpgBottom = el('div', 'rpg-bottom');
+    this.rpgLogEl = el('div', 'rpg-log');
+    this.rpgDialogEl = el('div', 'rpg-dialog panel-hidden');
+    this.rpgActionsEl = el('div', 'rpg-actions');
+    rpgBottom.append(this.rpgLogEl, this.rpgDialogEl, this.rpgActionsEl);
+    this.rpgHudEl.append(rpgTop, rpgBottom);
 
     this.insertPrompt = el('div', 'screen-overlay insert-prompt');
     this.insertPrompt.appendChild(el('div', 'insert-pill', '⬇ 請從下方點選遊戲卡匣插入'));
@@ -176,7 +217,7 @@ export class ConsoleView {
     });
     card.append(this.resultTitle, this.resultDesc, replayBtn);
     this.resultOverlay.appendChild(card);
-    this.screenFrame.append(this.canvas, this.insertPrompt, this.resultOverlay);
+    this.screenFrame.append(this.canvas, this.rpgHudEl, this.insertPrompt, this.resultOverlay);
 
     this.statusHintEl = el('div', 'screen-status-hint', '從卡匣收納盒挑一張遊戲卡插進主機吧！');
 
@@ -419,6 +460,7 @@ export class ConsoleView {
     this.starTag.textContent = `★ ${snap.starsCollected}/${snap.starsTotal}`;
     this.updateStats(stats, fps);
     this.statusHintEl.textContent = snap.statusBanner;
+    this.renderRpgHud(snap.rpgHud);
 
     const insertedId = this.getInserted();
     if (insertedId && this.host.saveRecord(insertedId, snap)) {
@@ -428,13 +470,15 @@ export class ConsoleView {
     if (snap.status !== this.lastBannerState) {
       this.lastBannerState = snap.status;
       if (snap.status === 'won') {
-        this.resultTitle.textContent = '🎉 太棒了！卡匣過關！';
+        this.resultTitle.textContent = snap.rpgHud ? '🐉 餘燼迷宮攻略成功！' : '🎉 太棒了！卡匣過關！';
         this.resultDesc.textContent = `本次分數 ${snap.score} 分，Momo 開心到在卡槽旁邊跳舞！`;
         this.resultOverlay.classList.remove('panel-hidden');
         this.host.reactMomo();
       } else if (snap.status === 'lost') {
-        this.resultTitle.textContent = '💫 愛心用完囉～';
-        this.resultDesc.textContent = '再挑戰一次，或去積木工房把重力調輕一點！';
+        this.resultTitle.textContent = snap.rpgHud ? '💀 冒險者力竭倒下…' : '💫 愛心用完囉～';
+        this.resultDesc.textContent = snap.rpgHud
+          ? '英雄在餘燼迷宮力竭了，再試一次並記得多喝藥水或向賢者求助！'
+          : '再挑戰一次，或去積木工房把重力調輕一點！';
         this.resultOverlay.classList.remove('panel-hidden');
       } else {
         this.resultOverlay.classList.add('panel-hidden');
@@ -448,6 +492,61 @@ export class ConsoleView {
   }
 
   // ================= internals =================
+
+  private renderRpgHud(hud?: RpgHudSnapshot): void {
+    if (!hud || this.slotState.phase !== 'running') {
+      if (!this.rpgHudEl.classList.contains('panel-hidden')) {
+        this.rpgHudEl.classList.add('panel-hidden');
+        this.lastRpgActionsKey = '';
+      }
+      return;
+    }
+
+    this.rpgHudEl.classList.remove('panel-hidden');
+    this.rpgFloorEl.textContent = `${hud.floorName} · T${hud.turnCount}`;
+    this.rpgStatsEl.textContent = `Lv.${hud.level} ❤️${hud.hp}/${hud.maxHp} ✨${hud.mp}/${hud.maxMp} 🛡️${hud.ac} 🔑${hud.keys} 🧪${hud.potions}`;
+
+    if (hud.combat) {
+      this.rpgEnemyEl.classList.remove('panel-hidden');
+      this.rpgEnemyEl.textContent = `🐉 ${hud.combat.enemyName} HP ${hud.combat.enemyHp}/${hud.combat.enemyMaxHp} AC${hud.combat.enemyAc}`;
+    } else {
+      this.rpgEnemyEl.classList.add('panel-hidden');
+    }
+
+    this.rpgAgentBtn.classList.toggle('is-on', hud.agentAuto);
+    this.rpgAgentBtn.textContent = hud.agentAuto ? '🤖 AI 託管中' : '🤖 AI 託管';
+
+    const logText = hud.combatLog.slice(0, 2).join('\n');
+    if (this.rpgLogEl.textContent !== logText) {
+      this.rpgLogEl.textContent = logText;
+    }
+
+    const opts = hud.dialog ? hud.dialog.choices : hud.actions;
+    const selIdx = hud.dialog ? hud.dialog.selectedIdx : hud.selectedActionIdx;
+    const dialogKey = hud.dialog ? `${hud.dialog.speaker}:${hud.dialog.text}` : '';
+    const renderKey = `${hud.mode}|${selIdx}|${dialogKey}|${opts.map((o) => `${o.id}:${o.label}:${o.enabled}`).join(',')}`;
+
+    if (renderKey !== this.lastRpgActionsKey) {
+      this.lastRpgActionsKey = renderKey;
+      if (hud.dialog) {
+        this.rpgDialogEl.classList.remove('panel-hidden');
+        this.rpgDialogEl.textContent = `【${hud.dialog.speaker}】${hud.dialog.text}`;
+      } else {
+        this.rpgDialogEl.classList.add('panel-hidden');
+      }
+
+      this.rpgActionsEl.textContent = '';
+      opts.forEach((opt, i) => {
+        const b = btn(`rpg-act-btn${i === selIdx ? ' is-selected' : ''}`, opt.label, undefined, () => {
+          pulseHaptic(8);
+          this.host.unlockAudio();
+          this.host.runner.dispatchCommand(opt.id);
+        });
+        b.disabled = !opt.enabled;
+        this.rpgActionsEl.appendChild(b);
+      });
+    }
+  }
 
   private syncStatusLights(): void {
     const isBoot = this.slotState.phase === 'booting';
@@ -490,6 +589,8 @@ export class ConsoleView {
     const meta = getCartridgeMeta(id);
     this.slotState = { phase: 'booting', id, timer: BOOT_SEC };
     this.lastBannerState = 'playing';
+    this.rpgHudEl.classList.add('panel-hidden');
+    this.lastRpgActionsKey = '';
     this.resultOverlay.classList.add('panel-hidden');
     this.insertPrompt.classList.add('panel-hidden');
     this.slotEl.classList.remove('is-empty');
@@ -515,6 +616,8 @@ export class ConsoleView {
   }
 
   private showEmptyState(): void {
+    this.rpgHudEl.classList.add('panel-hidden');
+    this.lastRpgActionsKey = '';
     this.insertPrompt.classList.remove('panel-hidden');
     this.resultOverlay.classList.add('panel-hidden');
     this.slotEl.classList.add('is-empty');
@@ -639,6 +742,15 @@ export class ConsoleView {
     this.host.reactMomo();
   }
 
+  private localDeltaFromCenter(rect: DOMRect, clientX: number, clientY: number): { dx: number; dy: number; halfW: number; halfH: number } {
+    const sx = clientX - (rect.left + rect.width / 2);
+    const sy = clientY - (rect.top + rect.height / 2);
+    if (this.element.closest('.is-rotated-90')) {
+      return { dx: sy, dy: -sx, halfW: rect.height / 2, halfH: rect.width / 2 };
+    }
+    return { dx: sx, dy: sy, halfW: rect.width / 2, halfH: rect.height / 2 };
+  }
+
   /**
    * Tactile Switch D-Pad with thumb-slide support:
    * sliding your thumb across directions updates Left/Right/Up/Down seamlessly without lifting.
@@ -659,9 +771,9 @@ export class ConsoleView {
     };
 
     const applyAt = (cx: number, cy: number) => {
-      const r = pad.getBoundingClientRect();
-      const dx = (cx - (r.left + r.width / 2)) / (r.width / 2);
-      const dy = (cy - (r.top + r.height / 2)) / (r.height / 2);
+      const loc = this.localDeltaFromCenter(pad.getBoundingClientRect(), cx, cy);
+      const dx = loc.dx / Math.max(1, loc.halfW);
+      const dy = loc.dy / Math.max(1, loc.halfH);
       const prevL = this.padInput.left;
       const prevR = this.padInput.right;
       const prevU = this.padInput.up;
@@ -720,9 +832,9 @@ export class ConsoleView {
     const maxR = 14;
 
     const apply = (cx: number, cy: number) => {
-      const r = base.getBoundingClientRect();
-      let dx = cx - (r.left + r.width / 2);
-      let dy = cy - (r.top + r.height / 2);
+      const loc = this.localDeltaFromCenter(base.getBoundingClientRect(), cx, cy);
+      let dx = loc.dx;
+      let dy = loc.dy;
       const len = Math.hypot(dx, dy);
       if (len > maxR) {
         dx = (dx / len) * maxR;
@@ -799,6 +911,7 @@ export class ConsoleView {
         case 'Digit1':
         case 'Digit2':
         case 'Digit3':
+        case 'Digit4':
           if (down && !e.repeat) {
             const meta = CARTRIDGES[Number(e.code.slice(-1)) - 1];
             if (meta) this.insertCartridge(meta.id);

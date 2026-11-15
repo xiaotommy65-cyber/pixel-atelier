@@ -172,33 +172,36 @@ export class SceneGpuBridge {
     }
 
     // 10. In-Screen Pixel HUD (Hearts top-left, Key/Stars top-right, Boss Bar top-center)
-    for (let i = 0; i < snap.maxHearts; i++) {
-      gpu.drawSprite(i < snap.hearts ? 'heart_full' : 'heart_empty', 12 + i * 13, 11, {
-        w: 11,
-        h: 11,
-      });
-    }
+    // Skip arcade sprite HUD when a cartridge uses the structured RPG HUD overlay (e.g. PA-04 D&D).
+    if (!snap.rpgHud) {
+      for (let i = 0; i < snap.maxHearts; i++) {
+        gpu.drawSprite(i < snap.hearts ? 'heart_full' : 'heart_empty', 12 + i * 13, 11, {
+          w: 11,
+          h: 11,
+        });
+      }
 
-    if (snap.hasKey) {
-      gpu.drawSprite('key', GAME_W - 14, 11, { w: 12, h: 12 });
-    }
+      if (snap.hasKey) {
+        gpu.drawSprite('key', GAME_W - 14, 11, { w: 12, h: 12 });
+      }
 
-    for (let i = 0; i < snap.starsTotal; i++) {
-      const collected = i < snap.starsCollected;
-      const baseOffset = snap.hasKey ? 28 : 14;
-      gpu.drawSprite('star_a', GAME_W - baseOffset - i * 11, 11, {
-        w: 9,
-        h: 9,
-        tint: collected ? '#ffd447' : '#8c9ab5',
-        alpha: collected ? 1 : 0.45,
-      });
-    }
+      for (let i = 0; i < snap.starsTotal; i++) {
+        const collected = i < snap.starsCollected;
+        const baseOffset = snap.hasKey ? 28 : 14;
+        gpu.drawSprite('star_a', GAME_W - baseOffset - i * 11, 11, {
+          w: 9,
+          h: 9,
+          tint: collected ? '#ffd447' : '#8c9ab5',
+          alpha: collected ? 1 : 0.45,
+        });
+      }
 
-    if (snap.bossMaxHp > 0 && snap.bossHp > 0) {
-      const barW = 90;
-      const ratio = snap.bossHp / snap.bossMaxHp;
-      gpu.drawRect(GAME_W * 0.5, 11, barW + 4, 8, '#382820', 0.85);
-      gpu.drawRect(GAME_W * 0.5 - barW * 0.5 * (1 - ratio), 11, barW * ratio, 4, '#ff708d', 1);
+      if (snap.bossMaxHp > 0 && snap.bossHp > 0) {
+        const barW = 90;
+        const ratio = snap.bossHp / snap.bossMaxHp;
+        gpu.drawRect(GAME_W * 0.5, 11, barW + 4, 8, '#382820', 0.85);
+        gpu.drawRect(GAME_W * 0.5 - barW * 0.5 * (1 - ratio), 11, barW * ratio, 4, '#ff708d', 1);
+      }
     }
 
     return gpu.flush(snap.timeSec);
