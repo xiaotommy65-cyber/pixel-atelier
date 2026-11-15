@@ -28,6 +28,11 @@ function pulseHaptic(ms = 9): void {
   }
 }
 
+type SlotState =
+  | { phase: 'empty' }
+  | { phase: 'booting'; id: CartridgeId; timer: number }
+  | { phase: 'running'; id: CartridgeId };
+
 /**
  * Switch-style handheld: Joy-Con (L) | screen body | Joy-Con (R),
  * with L/R shoulder bumpers, thumb-slide D-Pad, haptic tactile press travel,
@@ -40,9 +45,7 @@ export class ConsoleView {
   private host: EngineHost;
   private atlas: TextureAtlas;
 
-  private phase: ConsolePhase = 'empty';
-  private inserted: CartridgeId | null = null;
-  private bootTimer = 0;
+  private slotState: SlotState = { phase: 'empty' };
   private busy = false;
   private dropHot = false;
   private captureRequested = false;
@@ -100,7 +103,7 @@ export class ConsoleView {
     bindMomentaryButton(lBumper, () => {
       pulseHaptic(10);
       this.host.playUiSound('snap');
-      if (this.phase !== 'empty') this.host.runner.restart();
+      if (this.slotState.phase !== 'empty') this.host.runner.restart();
     });
 
     const lTop = el('div', 'jc-row');
@@ -204,7 +207,7 @@ export class ConsoleView {
       btn('jc-sys-btn', '+', '+ 重新開始這張卡匣', () => {
         pulseHaptic(10);
         this.host.playUiSound('snap');
-        if (this.phase !== 'empty') this.host.runner.restart();
+        if (this.slotState.phase !== 'empty') this.host.runner.restart();
       }),
     );
 
@@ -272,11 +275,11 @@ export class ConsoleView {
   // ================= public API =================
 
   public getPhase(): ConsolePhase {
-    return this.phase;
+    return this.slotState.phase;
   }
 
   public getInserted(): CartridgeId | null {
-    return this.inserted;
+    return this.slotState.phase === 'empty' ? null : this.slotState.id;
   }
 
   public isAwakeIdle(): boolean {
@@ -290,10 +293,10 @@ export class ConsoleView {
   }
 
   public tick(dt: number): void {
-    if (this.phase !== 'booting') return;
-    this.bootTimer -= dt;
-    if (this.bootTimer <= 0) {
-      this.phase = 'running';
+    if (this.slotState.phase !== 'booting') return;
+    this.slotState.timer -= dt;
+    if (this.slotState.timer <= 0) {
+      this.slotState = { phase: 'running', id: this.slotState.id };
       this.bootLayer?.remove();
       this.bootLayer = null;
       this.syncStatusLights();
@@ -346,7 +349,8 @@ export class ConsoleView {
 
   public insertCartridge(id: CartridgeId, instant = false): void {
     if (this.busy) return;
-    if (this.inserted === id) {
+    const currentId = this.getInserted();
+    if (currentId === id) {
       this.host.runner.switchCartridge(id);
       this.startBoot(id);
       return;
@@ -356,7 +360,6 @@ export class ConsoleView {
       if (!src) return;
       const finish = () => {
         src.classList.add('is-out');
-        this.inserted = id;
         this.mountSlotCard(id);
         this.host.runner.switchCartridge(id);
         this.startBoot(id);
@@ -372,20 +375,19 @@ export class ConsoleView {
         this.flyCard(src, finish);
       }
     };
-    if (this.inserted) this.eject(doInsert, instant);
+    if (currentId) this.eject(doInsert, instant);
     else doInsert();
   }
 
   public eject(after?: () => void, instant = false): void {
     if (this.busy) return;
-    const id = this.inserted;
+    const id = this.getInserted();
     if (!id) {
       after?.();
       return;
     }
     this.host.playUiSound('bounce');
-    this.inserted = null;
-    this.phase = 'empty';
+    this.slotState = { phase: 'empty' };
     this.bootLayer?.remove();
     this.bootLayer = null;
     const slotCard = this.slotCardEl;
@@ -418,8 +420,9 @@ export class ConsoleView {
     this.updateStats(stats, fps);
     this.statusHintEl.textContent = snap.statusBanner;
 
-    if (this.inserted && this.host.saveRecord(this.inserted, snap)) {
-      this.renderRecordBadge(this.inserted);
+    const insertedId = this.getInserted();
+    if (insertedId && this.host.saveRecord(insertedId, snap)) {
+      this.renderRecordBadge(insertedId);
     }
 
     if (snap.status !== this.lastBannerState) {
@@ -447,8 +450,8 @@ export class ConsoleView {
   // ================= internals =================
 
   private syncStatusLights(): void {
-    const isBoot = this.phase === 'booting';
-    const isRun = this.phase === 'running';
+    const isBoot = this.slotState.phase === 'booting';
+    const isRun = this.slotState.phase === 'running';
     this.slotLed.classList.toggle('is-boot', isBoot);
     this.slotLed.classList.toggle('is-run', isRun);
     for (const strip of this.ledStrips) {
@@ -485,8 +488,7 @@ export class ConsoleView {
 
   private startBoot(id: CartridgeId): void {
     const meta = getCartridgeMeta(id);
-    this.phase = 'booting';
-    this.bootTimer = BOOT_SEC;
+    this.slotState = { phase: 'booting', id, timer: BOOT_SEC };
     this.lastBannerState = 'playing';
     this.resultOverlay.classList.add('panel-hidden');
     this.insertPrompt.classList.add('panel-hidden');
@@ -623,7 +625,8 @@ export class ConsoleView {
   }
 
   private cycleCard(): void {
-    const idx = CARTRIDGES.findIndex((c) => c.id === this.inserted);
+    const insertedId = this.getInserted();
+    const idx = CARTRIDGES.findIndex((c) => c.id === insertedId);
     const next = CARTRIDGES[(idx + 1) % CARTRIDGES.length];
     this.insertCartridge(next.id);
   }

@@ -105,8 +105,8 @@ export class SandboxToyboxGame implements CartridgeInstance {
         if (/^#[0-9a-fA-F]{6}$/.test(tintHex)) this.world.ambientColor = tintHex;
       },
       setHeroSpawn: (x: number, y: number) => {
-        this.world.heroX = Math.max(8, Math.min(GAME_W - 24, Number(x) || 34));
-        this.world.heroY = Math.max(16, Math.min(134, Number(y) || 120));
+        this.world.hero.x = Math.max(8, Math.min(GAME_W - 24, Number(x) || 34));
+        this.world.hero.y = Math.max(16, Math.min(134, Number(y) || 120));
       },
       addCloud: (x: number, y: number, tilesWide = 3) => {
         this.world.addCloudPlatform(Number(x) || 80, Number(y) || 120, tilesWide);
@@ -205,7 +205,7 @@ export class SandboxToyboxGame implements CartridgeInstance {
     if (this.scriptError) {
       this.world.statusBanner = `積木語法提醒：${this.scriptError}`;
     } else if (this.world.ambientDarkness > 0.25) {
-      this.world.statusBanner = this.world.hasKey
+      this.world.statusBanner = this.world.gateUnlocked
         ? '機關門開啟！踏入傳送門破關！'
         : '暗影地牢：推箱壓開關、用火炬或火花 A 引爆炸彈！';
     } else {

@@ -41,6 +41,28 @@ interface PowerStar {
   vx: number;
 }
 
+interface ShipState {
+  x: number;
+  y: number;
+  flash: number;
+  squash: SquashSpring;
+  hearts: number;
+  spreadLevel: number;
+  shootCooldown: number;
+  invulnTimer: number;
+}
+
+interface BossState {
+  x: number;
+  y: number;
+  hp: number;
+  fireTimer: number;
+  flash: number;
+}
+
+const MAX_HEARTS = 3;
+const BOSS_MAX_HP = 22;
+
 /**
  * PA-02 Sugar Starlight: upgraded with InputMap, JuiceSystem (Hitstop + Trauma^2 Shake + Screen Flash + Shared ParticlePool),
  * and GPU white hit-flash on meteor/Boss/ship hits!
@@ -49,29 +71,23 @@ export class SugarStarlightGame implements CartridgeInstance {
   private readonly input = new InputMap();
   private readonly juice = new JuiceSystem();
 
-  private shipX = 36;
-  private shipY = 82;
-  private shipFlash = 0;
-  private shipSquash: SquashSpring = { scaleX: 1, scaleY: 1 };
-  private hearts = 3;
-  private readonly maxHearts = 3;
+  private ship: ShipState = {
+    x: 36,
+    y: 82,
+    flash: 0,
+    squash: { scaleX: 1, scaleY: 1 },
+    hearts: MAX_HEARTS,
+    spreadLevel: 1,
+    shootCooldown: 0,
+    invulnTimer: 0,
+  };
+  private boss: BossState | null = null;
   private score = 0;
   private starsCollected = 0;
-  private spreadLevel = 1;
-  private shootCooldown = 0;
-  private invulnTimer = 0;
   private elapsedSec = 0;
   private waveTimer = 0;
   private waveIndex = 0;
   private status: 'playing' | 'won' | 'lost' = 'playing';
-
-  private bossActive = false;
-  private bossX = 340;
-  private bossY = 74;
-  private bossHp = 22;
-  private readonly bossMaxHp = 22;
-  private bossFireTimer = 0.8;
-  private bossFlash = 0;
 
   private enemies: EnemyShip[] = [];
   private bullets: Bullet[] = [];
@@ -104,7 +120,7 @@ export class SugarStarlightGame implements CartridgeInstance {
   private spawnWave(): void {
     this.waveIndex++;
     if (this.score >= 300 || this.waveIndex >= 4) {
-      this.bossActive = true;
+      this.boss = { x: 340, y: 74, hp: BOSS_MAX_HP, fireTimer: 0.8, flash: 0 };
       return;
     }
 
@@ -125,6 +141,32 @@ export class SugarStarlightGame implements CartridgeInstance {
     }
   }
 
+  private damageShip(
+    events: SimEvent[],
+    trauma: number,
+    flashAlpha: number,
+    burstColors: readonly string[],
+    burstCount: number,
+    params: RuntimeParams,
+  ): void {
+    this.ship.hearts--;
+    this.ship.invulnTimer = 1.2;
+    this.ship.flash = 0.35;
+    events.push('hurt');
+    this.juice.triggerHitstop(0.06);
+    this.juice.addTrauma(trauma);
+    this.juice.triggerFlash('#ff708d', flashAlpha);
+    this.juice.spawnBurst(
+      this.ship.x + 8,
+      this.ship.y + 8,
+      burstColors,
+      burstCount,
+      params.sparkleDensity,
+      { gravity: 0, liftY: 0 },
+    );
+    if (this.ship.hearts <= 0) this.status = 'lost';
+  }
+
   public step(dt: number, rawInput: InputState, params: RuntimeParams): SimEvent[] {
     const events: SimEvent[] = [];
     this.input.update(rawInput, dt);
@@ -136,36 +178,36 @@ export class SugarStarlightGame implements CartridgeInstance {
       if (s.x < 0) s.x += GAME_W;
     }
 
-    if (this.shipFlash > 0) this.shipFlash = Math.max(0, this.shipFlash - dt * 6);
-    if (this.bossFlash > 0) this.bossFlash = Math.max(0, this.bossFlash - dt * 7);
+    if (this.ship.flash > 0) this.ship.flash = Math.max(0, this.ship.flash - dt * 6);
+    if (this.boss && this.boss.flash > 0) this.boss.flash = Math.max(0, this.boss.flash - dt * 7);
     for (const e of this.enemies) {
       if (e.flashTimer > 0) e.flashTimer = Math.max(0, e.flashTimer - dt * 7);
     }
-    stepSquashSpring(this.shipSquash, dt, 14);
+    stepSquashSpring(this.ship.squash, dt, 14);
 
     if (simDt <= 0 || this.status !== 'playing') return events;
     this.elapsedSec += simDt;
 
-    if (this.invulnTimer > 0) this.invulnTimer = Math.max(0, this.invulnTimer - simDt);
-    if (this.shootCooldown > 0) this.shootCooldown = Math.max(0, this.shootCooldown - simDt);
+    if (this.ship.invulnTimer > 0) this.ship.invulnTimer = Math.max(0, this.ship.invulnTimer - simDt);
+    if (this.ship.shootCooldown > 0) this.ship.shootCooldown = Math.max(0, this.ship.shootCooldown - simDt);
 
     // 2D Flight Movement
     const mx = this.input.axisX();
     const my = this.input.axisY();
     const speed = params.moveSpeed * 1.12;
-    this.shipX = Math.max(8, Math.min(GAME_W - 24, this.shipX + mx * speed * simDt));
-    this.shipY = Math.max(12, Math.min(GAME_H - 26, this.shipY + my * speed * simDt));
+    this.ship.x = Math.max(8, Math.min(GAME_W - 24, this.ship.x + mx * speed * simDt));
+    this.ship.y = Math.max(12, Math.min(GAME_H - 26, this.ship.y + my * speed * simDt));
 
     // Fire star-candy bolts (A, B, or Space)
     const firing = this.input.held('jump') || this.input.held('action');
-    if (firing && this.shootCooldown <= 0) {
-      this.shootCooldown = 0.16;
-      this.shipSquash = { scaleX: 0.86, scaleY: 1.14 };
+    if (firing && this.ship.shootCooldown <= 0) {
+      this.ship.shootCooldown = 0.16;
+      this.ship.squash = { scaleX: 0.86, scaleY: 1.14 };
       events.push('laser');
       const spawnBolt = (vy: number) => {
         this.bullets.push({
-          x: this.shipX + 14,
-          y: this.shipY + 5,
+          x: this.ship.x + 14,
+          y: this.ship.y + 5,
           vx: 230,
           vy,
           fromEnemy: false,
@@ -173,32 +215,32 @@ export class SugarStarlightGame implements CartridgeInstance {
         });
       };
       spawnBolt(0);
-      if (this.spreadLevel >= 2) {
+      if (this.ship.spreadLevel >= 2) {
         spawnBolt(-44);
         spawnBolt(44);
       }
     }
 
-    // Wave spawner before Boss
-    if (!this.bossActive) {
+    // Wave spawner before Boss, or Boss attack pattern
+    if (!this.boss) {
       this.waveTimer += simDt;
       if (this.waveTimer > 4.2 || this.enemies.length === 0) {
         this.waveTimer = 0;
         this.spawnWave();
       }
     } else {
-      if (this.bossX > 250) {
-        this.bossX -= 48 * simDt;
+      if (this.boss.x > 250) {
+        this.boss.x -= 48 * simDt;
       }
-      this.bossY = 76 + Math.sin(this.juice.visualTime * 1.7) * 44;
+      this.boss.y = 76 + Math.sin(this.juice.visualTime * 1.7) * 44;
 
-      this.bossFireTimer -= simDt;
-      if (this.bossFireTimer <= 0) {
-        this.bossFireTimer = 1.05;
+      this.boss.fireTimer -= simDt;
+      if (this.boss.fireTimer <= 0) {
+        this.boss.fireTimer = 1.05;
         for (const dy of [-28, 0, 28]) {
           this.bullets.push({
-            x: this.bossX,
-            y: this.bossY + 6,
+            x: this.boss.x,
+            y: this.boss.y + 6,
             vx: -118,
             vy: dy,
             fromEnemy: true,
@@ -225,18 +267,10 @@ export class SugarStarlightGame implements CartridgeInstance {
       }
 
       if (
-        this.invulnTimer <= 0 &&
-        Math.hypot(this.shipX + 8 - (e.x + 8), this.shipY + 8 - (e.y + 8)) < 13
+        this.ship.invulnTimer <= 0 &&
+        Math.hypot(this.ship.x + 8 - (e.x + 8), this.ship.y + 8 - (e.y + 8)) < 13
       ) {
-        this.hearts--;
-        this.invulnTimer = 1.2;
-        this.shipFlash = 0.35;
-        events.push('hurt');
-        this.juice.triggerHitstop(0.06);
-        this.juice.addTrauma(0.55);
-        this.juice.triggerFlash('#ff708d', 0.28);
-        this.juice.spawnBurst(this.shipX + 8, this.shipY + 8, ['#ff708d', '#fffaf0'], 10, params.sparkleDensity, { gravity: 0, liftY: 0 });
-        if (this.hearts <= 0) this.status = 'lost';
+        this.damageShip(events, 0.55, 0.28, ['#ff708d', '#fffaf0'], 10, params);
       }
     }
 
@@ -248,11 +282,11 @@ export class SugarStarlightGame implements CartridgeInstance {
         this.powerStars.splice(i, 1);
         continue;
       }
-      if (Math.hypot(this.shipX + 8 - (ps.x + 8), this.shipY + 8 - (ps.y + 8)) < 14) {
+      if (Math.hypot(this.ship.x + 8 - (ps.x + 8), this.ship.y + 8 - (ps.y + 8)) < 14) {
         this.powerStars.splice(i, 1);
         this.starsCollected++;
         this.juice.registerCombo();
-        this.spreadLevel = Math.min(2, this.spreadLevel + 1);
+        this.ship.spreadLevel = Math.min(2, this.ship.spreadLevel + 1);
         this.score += 75;
         events.push('star');
         this.juice.spawnBurst(ps.x + 8, ps.y + 8, ['#ffd447', '#fffaf0', '#56d39c'], 9, params.sparkleDensity, { gravity: 0, liftY: 0 });
@@ -271,19 +305,11 @@ export class SugarStarlightGame implements CartridgeInstance {
 
       if (b.fromEnemy) {
         if (
-          this.invulnTimer <= 0 &&
-          Math.hypot(this.shipX + 8 - b.x, this.shipY + 8 - b.y) < 9
+          this.ship.invulnTimer <= 0 &&
+          Math.hypot(this.ship.x + 8 - b.x, this.ship.y + 8 - b.y) < 9
         ) {
           this.bullets.splice(i, 1);
-          this.hearts--;
-          this.invulnTimer = 1.2;
-          this.shipFlash = 0.35;
-          events.push('hurt');
-          this.juice.triggerHitstop(0.06);
-          this.juice.addTrauma(0.5);
-          this.juice.triggerFlash('#ff708d', 0.25);
-          this.juice.spawnBurst(this.shipX + 8, this.shipY + 8, ['#ff708d', '#ffd447'], 8, params.sparkleDensity, { gravity: 0, liftY: 0 });
-          if (this.hearts <= 0) this.status = 'lost';
+          this.damageShip(events, 0.5, 0.25, ['#ff708d', '#ffd447'], 8, params);
         }
         continue;
       }
@@ -311,22 +337,23 @@ export class SugarStarlightGame implements CartridgeInstance {
         }
       }
 
-      if (!hit && this.bossActive && b.x > this.bossX - 4 && b.x < this.bossX + 34 && Math.abs(b.y - (this.bossY + 8)) < 14) {
+      const boss = this.boss;
+      if (!hit && boss && b.x > boss.x - 4 && b.x < boss.x + 34 && Math.abs(b.y - (boss.y + 8)) < 14) {
         hit = true;
-        this.bossHp--;
-        this.bossFlash = 0.14;
+        boss.hp--;
+        boss.flash = 0.14;
         this.score += 25;
         this.juice.addTrauma(0.14);
         this.juice.spawnBurst(b.x, b.y, ['#ff708d', '#ffd447', '#fffaf0'], 5, params.sparkleDensity, { gravity: 0, liftY: 0 });
-        if (this.bossHp <= 0) {
-          this.bossActive = false;
+        if (boss.hp <= 0) {
+          this.boss = null;
           this.status = 'won';
           this.score += 500;
           events.push('win');
           this.juice.triggerHitstop(0.08);
           this.juice.addTrauma(0.75);
           this.juice.triggerFlash('#fffaf0', 0.35);
-          this.juice.spawnBurst(this.bossX + 16, this.bossY + 8, ['#ffd447', '#56d39c', '#ff708d', '#5ec2f7'], 28, params.sparkleDensity, { gravity: 0, liftY: 0 });
+          this.juice.spawnBurst(boss.x + 16, boss.y + 8, ['#ffd447', '#56d39c', '#ff708d', '#5ec2f7'], 28, params.sparkleDensity, { gravity: 0, liftY: 0 });
         }
       }
 
@@ -380,20 +407,20 @@ export class SugarStarlightGame implements CartridgeInstance {
       }
     }
 
-    if (this.bossActive) {
+    if (this.boss) {
       entities.push({
         id: 'boss-ufo',
         sprite: 'boss_ufo',
-        x: this.bossX,
-        y: this.bossY,
+        x: this.boss.x,
+        y: this.boss.y,
         w: 32,
         h: 16,
-        flash: Math.min(1, this.bossFlash * 6),
+        flash: Math.min(1, this.boss.flash * 6),
       });
       if (glow > 0.05) {
         lights.push({
-          x: this.bossX + 16,
-          y: this.bossY + 8,
+          x: this.boss.x + 16,
+          y: this.boss.y + 8,
           radius: 44,
           color: '#ff708d',
           intensity: 0.55 * glow,
@@ -424,24 +451,24 @@ export class SugarStarlightGame implements CartridgeInstance {
       }
     }
 
-    const blink = this.invulnTimer > 0 && Math.floor(this.invulnTimer * 16) % 2 === 1;
-    if (!blink || this.shipFlash > 0) {
+    const blink = this.ship.invulnTimer > 0 && Math.floor(this.ship.invulnTimer * 16) % 2 === 1;
+    if (!blink || this.ship.flash > 0) {
       entities.push({
         id: 'ship',
         sprite: Math.floor(t * 12) % 2 === 0 ? 'ship_a' : 'ship_b',
-        x: this.shipX,
-        y: this.shipY,
+        x: this.ship.x,
+        y: this.ship.y,
         w: 16,
         h: 16,
-        scaleX: this.shipSquash.scaleX,
-        scaleY: this.shipSquash.scaleY,
-        flash: Math.min(1, this.shipFlash * 4),
+        scaleX: this.ship.squash.scaleX,
+        scaleY: this.ship.squash.scaleY,
+        flash: Math.min(1, this.ship.flash * 4),
       });
     }
     if (glow > 0.05) {
       lights.push({
-        x: this.shipX + 2,
-        y: this.shipY + 8,
+        x: this.ship.x + 2,
+        y: this.ship.y + 8,
         radius: 22,
         color: '#5ec2f7',
         intensity: 0.42 * glow,
@@ -450,12 +477,12 @@ export class SugarStarlightGame implements CartridgeInstance {
 
     let debugRects: DebugRectDesc[] | undefined;
     if (this.debugHitboxes) {
-      debugRects = [{ x: this.shipX + 2, y: this.shipY + 2, w: 12, h: 12, color: '#ffd447' }];
+      debugRects = [{ x: this.ship.x + 2, y: this.ship.y + 2, w: 12, h: 12, color: '#ffd447' }];
       for (const e of this.enemies) {
         debugRects.push({ x: e.x, y: e.y, w: 16, h: 16, color: '#ff708d' });
       }
-      if (this.bossActive) {
-        debugRects.push({ x: this.bossX, y: this.bossY, w: 32, h: 16, color: '#e0aaff' });
+      if (this.boss) {
+        debugRects.push({ x: this.boss.x, y: this.boss.y, w: 32, h: 16, color: '#e0aaff' });
       }
     }
 
@@ -471,11 +498,11 @@ export class SugarStarlightGame implements CartridgeInstance {
       comboCount: this.juice.comboCount,
       starsCollected: this.starsCollected,
       starsTotal: 5,
-      hasKey: this.spreadLevel >= 2,
-      hearts: Math.max(0, this.hearts),
-      maxHearts: this.maxHearts,
-      bossHp: this.bossActive ? this.bossHp : 0,
-      bossMaxHp: this.bossActive ? this.bossMaxHp : 0,
+      hasKey: this.ship.spreadLevel >= 2,
+      hearts: Math.max(0, this.ship.hearts),
+      maxHearts: MAX_HEARTS,
+      bossHp: this.boss?.hp ?? 0,
+      bossMaxHp: this.boss ? BOSS_MAX_HP : 0,
       cameraX: this.juice.shakeX,
       cameraY: this.juice.shakeY,
       screenFlashAlpha: this.juice.flashAlpha,
@@ -487,8 +514,8 @@ export class SugarStarlightGame implements CartridgeInstance {
       particles: this.juice.particles,
       lights,
       debugRects,
-      statusBanner: this.bossActive
-        ? `巨大棉花糖飛碟現身！剩餘體力 ${this.bossHp}/${this.bossMaxHp}`
+      statusBanner: this.boss
+        ? `巨大棉花糖飛碟現身！剩餘體力 ${this.boss.hp}/${BOSS_MAX_HP}`
         : '方向鍵飛行・按 B/A 發射星糖光束・F3 除錯框！',
     };
   }

@@ -60,6 +60,20 @@ export interface WorldConfig {
   statusBanner?: string;
 }
 
+export interface HeroState {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  facingLeft: boolean;
+  onGround: boolean;
+  coyote: number;
+  walkAnim: number;
+  invuln: number;
+  flash: number;
+  squash: SquashSpring;
+}
+
 const HERO_HB = { x: 2, y: 2, w: 12, h: 14 };
 
 /**
@@ -81,23 +95,24 @@ export class WorldKernel {
   public ambientColor: string;
   public statusBanner: string;
 
-  public heroX = 34;
-  public heroY = 120;
-  public heroVx = 0;
-  public heroVy = 0;
-  public heroFacingLeft = false;
-  public heroOnGround = false;
-  public heroCoyote = 0;
-  public heroWalkAnim = 0;
-  public heroInvuln = 0;
-  public heroFlash = 0;
-  public heroSquash: SquashSpring = { scaleX: 1, scaleY: 1 };
+  public hero: HeroState = {
+    x: 34,
+    y: 120,
+    vx: 0,
+    vy: 0,
+    facingLeft: false,
+    onGround: false,
+    coyote: 0,
+    walkAnim: 0,
+    invuln: 0,
+    flash: 0,
+    squash: { scaleX: 1, scaleY: 1 },
+  };
 
   public hearts = 3;
   public maxHearts = 3;
   public score = 0;
-  public hasKey = false;
-  public gatesUnlocked = false;
+  public gateUnlocked = false;
   public status: 'playing' | 'won' | 'lost' = 'playing';
   public elapsedSec = 0;
   public cameraX = 0;
@@ -222,14 +237,14 @@ export class WorldKernel {
     }
 
     // Gentle playful knockback on hero without cheap insta-death
-    const hdx = this.heroX + 8 - cx;
-    const hdy = this.heroY + 8 - cy;
+    const hdx = this.hero.x + 8 - cx;
+    const hdy = this.hero.y + 8 - cy;
     const hdist = Math.hypot(hdx, hdy);
     if (hdist < radius * 0.85) {
       const inv = hdist > 1 ? 1 / hdist : 1;
-      this.heroVx = hdx * inv * 140;
-      this.heroVy = Math.min(this.heroVy, -155);
-      this.heroSquash = { scaleX: 1.25, scaleY: 0.78 };
+      this.hero.vx = hdx * inv * 140;
+      this.hero.vy = Math.min(this.hero.vy, -155);
+      this.hero.squash = { scaleX: 1.25, scaleY: 0.78 };
     }
   }
 
@@ -245,8 +260,8 @@ export class WorldKernel {
       if (c.x < -64) c.x = this.worldW + 48;
     }
 
-    if (this.heroFlash > 0) this.heroFlash = Math.max(0, this.heroFlash - dt * 6);
-    stepSquashSpring(this.heroSquash, dt, 14);
+    if (this.hero.flash > 0) this.hero.flash = Math.max(0, this.hero.flash - dt * 6);
+    stepSquashSpring(this.hero.squash, dt, 14);
     for (const e of this.entities) {
       if (e.flashTimer > 0) e.flashTimer = Math.max(0, e.flashTimer - dt * 5.5);
       stepSquashSpring(e, dt, 13);
@@ -257,7 +272,7 @@ export class WorldKernel {
     }
 
     this.elapsedSec += simDt;
-    if (this.heroInvuln > 0) this.heroInvuln = Math.max(0, this.heroInvuln - simDt);
+    if (this.hero.invuln > 0) this.hero.invuln = Math.max(0, this.hero.invuln - simDt);
 
     const actions: RuleWorldActions = {
       emit: (ev) => events.push(ev),
@@ -265,7 +280,7 @@ export class WorldKernel {
         this.score += pts;
       },
       unlockGates: () => {
-        this.gatesUnlocked = true;
+        this.gateUnlocked = true;
         for (const e of this.entities) {
           if (e.tags.has('gate')) {
             e.sprite = 'gate_open';
@@ -300,10 +315,10 @@ export class WorldKernel {
     }
 
     // Smooth camera follow + lookahead + Trauma^2 shake offset
-    const lookAhead = this.heroFacingLeft ? -16 : 16;
+    const lookAhead = this.hero.facingLeft ? -16 : 16;
     const targetCamX = Math.max(
       0,
-      Math.min(this.worldW - GAME_W, this.heroX + lookAhead - GAME_W * 0.44),
+      Math.min(this.worldW - GAME_W, this.hero.x + lookAhead - GAME_W * 0.44),
     );
     this.cameraX += (targetCamX - this.cameraX) * Math.min(1, simDt * 8.5);
 
@@ -329,129 +344,132 @@ export class WorldKernel {
   }
 
   private stepHeroControls(dt: number, params: RuntimeParams, actions: RuleWorldActions): void {
+    const h = this.hero;
     const dir = this.input.axisX();
     if (dir !== 0) {
-      this.heroFacingLeft = dir < 0;
+      h.facingLeft = dir < 0;
       const targetVx = dir * params.moveSpeed;
-      const accel = this.heroOnGround ? 960 : 640;
-      this.heroVx =
-        this.heroVx < targetVx
-          ? Math.min(targetVx, this.heroVx + accel * dt)
-          : Math.max(targetVx, this.heroVx - accel * dt);
-      this.heroWalkAnim += dt * 9;
+      const accel = h.onGround ? 960 : 640;
+      h.vx =
+        h.vx < targetVx
+          ? Math.min(targetVx, h.vx + accel * dt)
+          : Math.max(targetVx, h.vx - accel * dt);
+      h.walkAnim += dt * 9;
     } else {
-      const decel = this.heroOnGround ? 880 : 300;
-      this.heroVx =
-        this.heroVx > 0
-          ? Math.max(0, this.heroVx - decel * dt)
-          : Math.min(0, this.heroVx + decel * dt);
+      const decel = h.onGround ? 880 : 300;
+      h.vx =
+        h.vx > 0
+          ? Math.max(0, h.vx - decel * dt)
+          : Math.min(0, h.vx + decel * dt);
     }
 
     if (this.input.justPressed('jump') || this.input.justPressed('up')) {
       this.input.primeBuffer('jump', 0.13);
     }
-    this.heroCoyote = this.heroOnGround ? 0.11 : Math.max(0, this.heroCoyote - dt);
+    h.coyote = h.onGround ? 0.11 : Math.max(0, h.coyote - dt);
 
-    if (this.input.hasBuffered('jump') && this.heroCoyote > 0) {
+    if (this.input.hasBuffered('jump') && h.coyote > 0) {
       this.input.consumeBuffer('jump');
-      this.heroVy = -params.jumpPower;
-      this.heroOnGround = false;
-      this.heroCoyote = 0;
-      this.heroSquash = { scaleX: 0.78, scaleY: 1.24 };
+      h.vy = -params.jumpPower;
+      h.onGround = false;
+      h.coyote = 0;
+      h.squash = { scaleX: 0.78, scaleY: 1.24 };
       actions.emit('jump');
-      actions.spawnBurst(this.heroX + 8, this.heroY + 15, ['#fffaf0', '#56d39c'], 4);
+      actions.spawnBurst(h.x + 8, h.y + 15, ['#fffaf0', '#56d39c'], 4);
     }
 
-    if (!this.input.held('jump') && !this.input.held('up') && this.heroVy < -60) {
-      this.heroVy *= 0.86;
+    if (!this.input.held('jump') && !this.input.held('up') && h.vy < -60) {
+      h.vy *= 0.86;
     }
 
-    const apexBoost = !this.heroOnGround && Math.abs(this.heroVy) < 38 ? 0.56 : 1.0;
-    this.heroVy = Math.min(340, this.heroVy + 590 * params.gravityScale * apexBoost * dt);
+    const apexBoost = !h.onGround && Math.abs(h.vy) < 38 ? 0.56 : 1.0;
+    h.vy = Math.min(340, h.vy + 590 * params.gravityScale * apexBoost * dt);
 
     if (this.input.justPressed('action')) {
-      const sign = this.heroFacingLeft ? -1 : 1;
+      const sign = h.facingLeft ? -1 : 1;
       this.sparks.push({
-        x: this.heroX + 8 + sign * 7,
-        y: this.heroY + 7,
+        x: h.x + 8 + sign * 7,
+        y: h.y + 7,
         vx: sign * 155,
         vy: -22,
         life: 0.42,
       });
-      this.heroSquash = { scaleX: 1.15, scaleY: 0.88 };
+      h.squash = { scaleX: 1.15, scaleY: 0.88 };
       actions.emit('ignite');
-      actions.spawnBurst(this.heroX + 8 + sign * 8, this.heroY + 7, ['#ffd447', '#fffaf0'], 4);
+      actions.spawnBurst(h.x + 8 + sign * 8, h.y + 7, ['#ffd447', '#fffaf0'], 4);
     }
   }
 
   private resolveHeroMotion(dt: number, actions: RuleWorldActions): void {
+    const h = this.hero;
     const { x: hbX, y: hbY, w: hbW, h: hbH } = HERO_HB;
-    const wasOnGround = this.heroOnGround;
+    const wasOnGround = h.onGround;
 
-    this.heroX = Math.max(0, Math.min(this.worldW - 16, this.heroX + this.heroVx * dt));
+    h.x = Math.max(0, Math.min(this.worldW - 16, h.x + h.vx * dt));
     for (const e of this.entities) {
       if (!e.alive || !e.tags.has('pushable')) continue;
-      if (!rectsOverlap(this.heroX + hbX, this.heroY + hbY, hbW, hbH, e.x, e.y + 3, e.w, e.h - 5)) continue;
-      if (this.heroVx > 0 && this.heroX < e.x) {
-        e.vx = Math.max(e.vx, Math.min(82, this.heroVx * 0.92));
-        this.heroX = e.x - hbX - hbW;
-      } else if (this.heroVx < 0 && this.heroX > e.x) {
-        e.vx = Math.min(e.vx, Math.max(-82, this.heroVx * 0.92));
-        this.heroX = e.x + e.w - hbX;
+      if (!rectsOverlap(h.x + hbX, h.y + hbY, hbW, hbH, e.x, e.y + 3, e.w, e.h - 5)) continue;
+      if (h.vx > 0 && h.x < e.x) {
+        e.vx = Math.max(e.vx, Math.min(82, h.vx * 0.92));
+        h.x = e.x - hbX - hbW;
+      } else if (h.vx < 0 && h.x > e.x) {
+        e.vx = Math.min(e.vx, Math.max(-82, h.vx * 0.92));
+        h.x = e.x + e.w - hbX;
       }
     }
 
     for (const s of this.solids) {
       if (s.kind === 'cloud') continue;
-      if (!rectsOverlap(this.heroX + hbX, this.heroY + hbY, hbW, hbH, s.x, s.y, s.w, s.h)) continue;
-      if (this.heroVx > 0) this.heroX = s.x - hbX - hbW;
-      else if (this.heroVx < 0) this.heroX = s.x + s.w - hbX;
-      this.heroVx = 0;
+      if (!rectsOverlap(h.x + hbX, h.y + hbY, hbW, hbH, s.x, s.y, s.w, s.h)) continue;
+      if (h.vx > 0) h.x = s.x - hbX - hbW;
+      else if (h.vx < 0) h.x = s.x + s.w - hbX;
+      h.vx = 0;
     }
 
-    const prevBottom = this.heroY + hbY + hbH;
-    const preLandVy = this.heroVy;
-    this.heroY += this.heroVy * dt;
-    this.heroOnGround = false;
+    const prevBottom = h.y + hbY + hbH;
+    const preLandVy = h.vy;
+    h.y += h.vy * dt;
+    h.onGround = false;
 
     for (const s of this.getSolidBoxes(true)) {
-      if (this.heroX + hbX + hbW <= s.x || this.heroX + hbX >= s.x + s.w) continue;
+      if (h.x + hbX + hbW <= s.x || h.x + hbX >= s.x + s.w) continue;
       if (s.kind === 'cloud') {
-        if (this.heroVy >= 0 && prevBottom <= s.y + 5 && this.heroY + hbY + hbH >= s.y) {
-          this.heroY = s.y - hbY - hbH;
-          this.heroVy = 0;
-          this.heroOnGround = true;
+        if (h.vy >= 0 && prevBottom <= s.y + 5 && h.y + hbY + hbH >= s.y) {
+          h.y = s.y - hbY - hbH;
+          h.vy = 0;
+          h.onGround = true;
         }
         continue;
       }
-      if (this.heroY + hbY + hbH > s.y && this.heroY + hbY < s.y + s.h) {
-        if (this.heroVy >= 0 && prevBottom <= s.y + 8) {
-          this.heroY = s.y - hbY - hbH;
-          this.heroVy = 0;
-          this.heroOnGround = true;
-        } else if (this.heroVy < 0) {
+      if (h.y + hbY + hbH > s.y && h.y + hbY < s.y + s.h) {
+        if (h.vy >= 0 && prevBottom <= s.y + 8) {
+          h.y = s.y - hbY - hbH;
+          h.vy = 0;
+          h.onGround = true;
+        } else if (h.vy < 0) {
           // 4px ceiling corner correction
-          const leftClip = this.heroX + hbX + hbW - s.x;
-          const rightClip = s.x + s.w - (this.heroX + hbX);
-          if (leftClip > 0 && leftClip <= 4) this.heroX -= leftClip;
-          else if (rightClip > 0 && rightClip <= 4) this.heroX += rightClip;
+          const leftClip = h.x + hbX + hbW - s.x;
+          const rightClip = s.x + s.w - (h.x + hbX);
+          if (leftClip > 0 && leftClip <= 4) h.x -= leftClip;
+          else if (rightClip > 0 && rightClip <= 4) h.x += rightClip;
           else {
-            this.heroY = s.y + s.h - hbY;
-            this.heroVy = 0;
+            h.y = s.y + s.h - hbY;
+            h.vy = 0;
           }
         }
       }
     }
 
-    if (!wasOnGround && this.heroOnGround && preLandVy > 95) {
+    if (!wasOnGround && h.onGround && preLandVy > 95) {
       const amt = Math.min(0.28, (preLandVy / 320) * 0.28);
-      this.heroSquash = { scaleX: 1 + amt, scaleY: 1 - amt * 0.9 };
-      actions.spawnBurst(this.heroX + 8, this.heroY + 15, ['#fffaf0', '#c7d4e6'], 3);
+      h.squash = { scaleX: 1 + amt, scaleY: 1 - amt * 0.9 };
+      actions.spawnBurst(h.x + 8, h.y + 15, ['#fffaf0', '#c7d4e6'], 3);
     }
   }
 
   private rescueHeroFromAbyss(actions: RuleWorldActions): void {
-    if (this.heroY <= this.worldH + 18) return;
+    const h = this.hero;
+    if (h.y <= this.worldH + 18) return;
     this.hearts--;
     actions.emit('hurt');
     actions.triggerJuice(0.06, 0.5, '#ff708d', 0.28);
@@ -459,16 +477,17 @@ export class WorldKernel {
       this.status = 'lost';
       return;
     }
-    this.heroX = Math.max(24, Math.min(this.heroX - 36, this.worldW - 40));
-    this.heroY = 48;
-    this.heroVx = 0;
-    this.heroVy = 0;
-    this.heroInvuln = 1.25;
+    h.x = Math.max(24, Math.min(h.x - 36, this.worldW - 40));
+    h.y = 48;
+    h.vx = 0;
+    h.vy = 0;
+    h.invuln = 1.25;
   }
 
   private handleHeroEntityInteractions(params: RuntimeParams, actions: RuleWorldActions): void {
-    const hcx = this.heroX + 8;
-    const hcy = this.heroY + 8;
+    const h = this.hero;
+    const hcx = h.x + 8;
+    const hcy = h.y + 8;
 
     for (const e of this.entities) {
       if (!e.alive) continue;
@@ -485,16 +504,15 @@ export class WorldKernel {
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#fffaf0', '#ff708d'], 9);
       } else if (e.tags.has('key') && dist < 14) {
         e.alive = false;
-        this.hasKey = true;
         actions.unlockGates();
         actions.addScore(200);
         actions.emit('key');
         actions.triggerJuice(0.04, 0.22, '#ffd447', 0.22);
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#56d39c', '#fffaf0'], 14);
       } else if (e.tags.has('bouncy') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
-        this.heroVy = -params.jumpPower * 1.42;
-        this.heroOnGround = false;
-        this.heroSquash = { scaleX: 0.72, scaleY: 1.32 };
+        h.vy = -params.jumpPower * 1.42;
+        h.onGround = false;
+        h.squash = { scaleX: 0.72, scaleY: 1.32 };
         e.scaleX = 1.38;
         e.scaleY = 0.62;
         e.flashTimer = 0.1;
@@ -505,27 +523,27 @@ export class WorldKernel {
         if (activateSwitchPad(e, actions, 10)) {
           actions.triggerJuice(0.03, 0.25);
         }
-      } else if (e.tags.has('gate') && (this.gatesUnlocked || this.hasKey) && dist < 15) {
+      } else if (e.tags.has('gate') && this.gateUnlocked && dist < 15) {
         this.status = 'won';
         actions.addScore(300);
         actions.emit('win');
         actions.triggerJuice(0.06, 0.4, '#fffaf0', 0.28);
         actions.spawnBurst(ecx, ecy, ['#ffd447', '#56d39c', '#ff708d', '#5ec2f7'], 24);
       } else if (e.tags.has('stompable') && Math.abs(hcx - ecx) < 12 && Math.abs(hcy - ecy) < 12) {
-        if (this.heroVy > 8 && hcy - ecy < 5) {
+        if (h.vy > 8 && hcy - ecy < 5) {
           destroyFragile(e, actions, 12);
-          this.heroVy = -params.jumpPower * 0.85;
-          this.heroSquash = { scaleX: 1.24, scaleY: 0.76 };
+          h.vy = -params.jumpPower * 0.85;
+          h.squash = { scaleX: 1.24, scaleY: 0.76 };
           this.juice.registerCombo();
           actions.emit('stomp');
           actions.triggerJuice(0.04, 0.3, '#fffaf0', 0.14);
-        } else if (this.heroInvuln <= 0) {
+        } else if (h.invuln <= 0) {
           this.hearts--;
-          this.heroInvuln = 1.25;
-          this.heroFlash = 0.26;
-          this.heroVy = -145;
-          this.heroVx = hcx < ecx ? -95 : 95;
-          this.heroSquash = { scaleX: 1.3, scaleY: 0.74 };
+          h.invuln = 1.25;
+          h.flash = 0.26;
+          h.vy = -145;
+          h.vx = hcx < ecx ? -95 : 95;
+          h.squash = { scaleX: 1.3, scaleY: 0.74 };
           actions.emit('hurt');
           actions.triggerJuice(0.065, 0.58, '#ff708d', 0.3);
           actions.spawnBurst(hcx, hcy, ['#ff708d', '#fffaf0'], 9);
@@ -720,28 +738,29 @@ export class WorldKernel {
     }
 
     // Hero sprite (foot-anchored squash/stretch + white hit-flash)
-    const blink = this.heroInvuln > 0 && Math.floor(this.heroInvuln * 16) % 2 === 1;
-    if (!blink || this.heroFlash > 0) {
-      const moving = Math.abs(this.heroVx) > 8 || !this.heroOnGround;
-      const heroSprite: SpriteId = moving && Math.floor(this.heroWalkAnim) % 2 === 1 ? 'hero_b' : 'hero_a';
+    const h = this.hero;
+    const blink = h.invuln > 0 && Math.floor(h.invuln * 16) % 2 === 1;
+    if (!blink || h.flash > 0) {
+      const moving = Math.abs(h.vx) > 8 || !h.onGround;
+      const heroSprite: SpriteId = moving && Math.floor(h.walkAnim) % 2 === 1 ? 'hero_b' : 'hero_a';
       outEntities.push({
         id: 'hero',
         sprite: heroSprite,
-        x: this.heroX,
-        y: this.heroY,
+        x: h.x,
+        y: h.y,
         w: 16,
         h: 16,
-        scaleX: this.heroSquash.scaleX,
-        scaleY: this.heroSquash.scaleY,
+        scaleX: h.squash.scaleX,
+        scaleY: h.squash.scaleY,
         anchorY: 1,
-        flash: Math.min(1, this.heroFlash),
-        flipX: this.heroFacingLeft,
+        flash: Math.min(1, h.flash),
+        flipX: h.facingLeft,
       });
     }
     if (glow > 0.05) {
       lights.push({
-        x: this.heroX + 8,
-        y: this.heroY + 8,
+        x: h.x + 8,
+        y: h.y + 8,
         radius: this.ambientDarkness > 0.2 ? 46 : 30,
         color: this.ambientDarkness > 0.2 ? '#ffe6a3' : '#fff3d0',
         intensity: (this.ambientDarkness > 0.2 ? 0.56 : 0.3) * glow,
@@ -761,7 +780,7 @@ export class WorldKernel {
           color: s.kind === 'cloud' ? '#5ec2f7' : '#56d39c',
         });
       }
-      debugRects.push({ x: this.heroX + 2, y: this.heroY + 2, w: 12, h: 14, color: '#ffd447' });
+      debugRects.push({ x: h.x + 2, y: h.y + 2, w: 12, h: 14, color: '#ffd447' });
       for (const e of this.entities) {
         if (!e.alive) continue;
         debugRects.push({
@@ -786,7 +805,7 @@ export class WorldKernel {
       comboCount: this.juice.comboCount,
       starsCollected: this.starsCollected,
       starsTotal: this.starsTotal,
-      hasKey: this.hasKey || this.gatesUnlocked,
+      hasKey: this.gateUnlocked,
       hearts: Math.max(0, this.hearts),
       maxHearts: this.maxHearts,
       bossHp: 0,

@@ -26,8 +26,8 @@ export class CloudberryHopGame implements CartridgeInstance {
       skyBottom: '#fff3df',
       statusBanner: '踩扁果凍史萊姆、收集天空鑰匙與星星！',
     });
-    this.world.heroX = 28;
-    this.world.heroY = 122;
+    this.world.hero.x = 28;
+    this.world.hero.y = 122;
     this.buildLevel();
   }
 
@@ -89,7 +89,7 @@ export class CloudberryHopGame implements CartridgeInstance {
 
   public step(dt: number, input: InputState, params: RuntimeParams): SimEvent[] {
     const events = this.world.step(dt, input, params);
-    this.world.statusBanner = this.world.hasKey
+    this.world.statusBanner = this.world.gateUnlocked
       ? '鑰匙已入手！快跳往彩虹傳送門！'
       : '踩扁果凍史萊姆、踏彈簧拿天空鑰匙與星星！';
     return events;
