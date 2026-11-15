@@ -90,7 +90,8 @@ void main() {
     float d = length(vLocalUv * 2.0 - vec2(1.0));
     float f = clamp(1.0 - d, 0.0, 1.0);
     float power = vParam > 0.1 ? vParam : 2.0;
-    fragColor = vec4(vTint.rgb, vTint.a * pow(f, power));
+    float glow = f > 0.001 ? pow(f, power) : 0.0;
+    fragColor = vec4(vTint.rgb, vTint.a * glow);
     return;
   }
   vec4 sampled = texture(uAtlas, vTexUv);

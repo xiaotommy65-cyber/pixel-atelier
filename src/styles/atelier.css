@@ -560,25 +560,65 @@ textarea {
 
 @media (max-width: 760px) {
   .atelier-shell {
-    padding: 8px 10px 18px;
-    gap: 8px;
-  }
-
-  .atelier-header {
-    padding: 8px 10px;
-    gap: 8px;
-  }
-
-  .station-nav {
+    padding: 6px 8px 14px;
     gap: 6px;
   }
 
-  .station-tab {
-    flex-direction: column;
-    gap: 2px;
+  .atelier-header {
+    padding: 6px 9px;
+    gap: 6px;
+    border-radius: 14px;
+  }
+
+  .momo-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .momo-canvas {
+    width: 26px;
+    height: 26px;
+  }
+
+  .brand-title {
+    font-size: 0.92rem;
+  }
+
+  .brand-sub {
+    display: none;
+  }
+
+  .gpu-pill {
+    padding: 3px 7px;
+    font-size: 0.64rem;
+  }
+
+  .shell-swatch {
+    width: 17px;
+    height: 17px;
+  }
+
+  .toy-btn {
+    padding: 4px 8px;
     font-size: 0.72rem;
-    padding: 7px 4px;
-    border-radius: 13px;
+  }
+
+  .station-nav {
+    gap: 5px;
+  }
+
+  .station-tab {
+    flex-direction: row;
+    gap: 4px;
+    font-size: 0.7rem;
+    padding: 6px 4px;
+    border-radius: 11px;
+    box-shadow: 0 3px 0 var(--ink);
+  }
+
+  .tab-icon {
+    font-size: 0.88rem;
   }
 
   .atelier-grid-layout,
@@ -592,5 +632,63 @@ textarea {
 
   .piano-key {
     min-height: 76px;
+  }
+}
+
+@media (max-height: 540px) and (orientation: landscape) {
+  .atelier-shell {
+    padding: 3px 10px 6px;
+    gap: 3px;
+  }
+
+  .atelier-header {
+    padding: 3px 8px;
+    border-radius: 12px;
+    box-shadow: 0 3px 0 var(--ink);
+  }
+
+  .momo-badge {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .momo-canvas {
+    width: 20px;
+    height: 20px;
+  }
+
+  .brand-title {
+    font-size: 0.86rem;
+  }
+
+  .brand-sub {
+    display: none;
+  }
+
+  .gpu-pill {
+    padding: 2px 6px;
+    font-size: 0.62rem;
+  }
+
+  .shell-swatch {
+    width: 15px;
+    height: 15px;
+  }
+
+  .toy-btn {
+    padding: 2px 7px;
+    font-size: 0.68rem;
+  }
+
+  .station-nav {
+    gap: 5px;
+  }
+
+  .station-tab {
+    padding: 3px 5px;
+    font-size: 0.68rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 0 var(--ink);
   }
 }

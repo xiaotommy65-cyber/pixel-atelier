@@ -98,21 +98,23 @@ fn vsSprite(@builtin(vertex_index) vid: u32, inst: InstanceIn) -> SpriteOut {
 
 @fragment
 fn fsSprite(in: SpriteOut) -> @location(0) vec4f {
+  // Sample atlas in uniform control flow BEFORE any non-uniform mode branches (WGSL requirement)
+  let sampled = textureSample(uAtlas, uSamp, in.texUv);
+
   if (in.mode > 1.5) {
     // Mode 2: Solid crisp pixel shape with optional flash
     let solidRgb = mix(in.tint.rgb, vec3f(1.0), clamp(in.flash, 0.0, 1.0));
     return vec4f(solidRgb, in.tint.a);
   }
   if (in.mode > 0.5) {
-    // Mode 1: Smooth radial GPU light / bloom orb (param overrides falloff power, default 2.0)
+    // Mode 1: Smooth radial GPU light / bloom orb (guard pow base > 0)
     let d = length(in.localUv * 2.0 - vec2f(1.0));
     let falloff = clamp(1.0 - d, 0.0, 1.0);
     let power = select(2.0, in.param, in.param > 0.1);
-    let glow = pow(falloff, power);
+    let glow = select(0.0, pow(max(falloff, 0.0001), power), falloff > 0.001);
     return vec4f(in.tint.rgb, in.tint.a * glow);
   }
   // Mode 0: Crisp nearest-sampled Texture Atlas sprite with per-instance hit-flash
-  let sampled = textureSample(uAtlas, uSamp, in.texUv);
   if (sampled.a < 0.05) {
     discard;
   }
@@ -136,135 +138,42 @@ export class WebGpuBackend implements IGpuBackend {
   private alphaBuffer: GPUBuffer;
   private addBuffer: GPUBuffer;
   private atlasTexture: GPUTexture;
-  private sampler: GPUSampler;
   private bindGroup: GPUBindGroup;
   private onLostCallback?: () => void;
+  private recovered = false;
 
   private constructor(
     device: GPUDevice,
     context: GPUCanvasContext,
     format: GPUTextureFormat,
-    atlasWidth: number,
-    atlasHeight: number,
-    initialPixels: Uint8Array,
+    skyPipeline: GPURenderPipeline,
+    alphaPipeline: GPURenderPipeline,
+    addPipeline: GPURenderPipeline,
+    skyUniformBuffer: GPUBuffer,
+    alphaBuffer: GPUBuffer,
+    addBuffer: GPUBuffer,
+    atlasTexture: GPUTexture,
+    bindGroup: GPUBindGroup,
     onLost?: () => void,
   ) {
     this.device = device;
     this.context = context;
     this.format = format;
+    this.skyPipeline = skyPipeline;
+    this.alphaPipeline = alphaPipeline;
+    this.addPipeline = addPipeline;
+    this.skyUniformBuffer = skyUniformBuffer;
+    this.alphaBuffer = alphaBuffer;
+    this.addBuffer = addBuffer;
+    this.atlasTexture = atlasTexture;
+    this.bindGroup = bindGroup;
     this.onLostCallback = onLost;
 
-    const module = device.createShaderModule({ code: WGSL_CODE });
-
-    this.atlasTexture = device.createTexture({
-      size: [atlasWidth, atlasHeight, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this.uploadAtlas(atlasWidth, atlasHeight, initialPixels);
-
-    this.sampler = device.createSampler({
-      magFilter: 'nearest',
-      minFilter: 'nearest',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge',
-    });
-
-    this.skyUniformBuffer = device.createBuffer({
-      size: 48,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    const instanceBytes = MAX_INSTANCES_PER_PASS * FLOATS_PER_INSTANCE * 4;
-    this.alphaBuffer = device.createBuffer({
-      size: instanceBytes,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    this.addBuffer = device.createBuffer({
-      size: instanceBytes,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-
-    const bindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      ],
-    });
-
-    const pipelineLayout = device.createPipelineLayout({
-      bindGroupLayouts: [bindGroupLayout],
-    });
-
-    this.bindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.skyUniformBuffer } },
-        { binding: 1, resource: this.atlasTexture.createView() },
-        { binding: 2, resource: this.sampler },
-      ],
-    });
-
-    this.skyPipeline = device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: { module, entryPoint: 'vsSky' },
-      fragment: {
-        module,
-        entryPoint: 'fsSky',
-        targets: [{ format }],
-      },
-    });
-
-    const instanceLayout: GPUVertexBufferLayout = {
-      arrayStride: FLOATS_PER_INSTANCE * 4,
-      stepMode: 'instance',
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: 'float32x4' },
-        { shaderLocation: 1, offset: 16, format: 'float32x4' },
-        { shaderLocation: 2, offset: 32, format: 'float32x4' },
-        { shaderLocation: 3, offset: 48, format: 'float32x4' },
-      ],
-    };
-
-    this.alphaPipeline = device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: { module, entryPoint: 'vsSprite', buffers: [instanceLayout] },
-      fragment: {
-        module,
-        entryPoint: 'fsSprite',
-        targets: [
-          {
-            format,
-            blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            },
-          },
-        ],
-      },
-    });
-
-    this.addPipeline = device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: { module, entryPoint: 'vsSprite', buffers: [instanceLayout] },
-      fragment: {
-        module,
-        entryPoint: 'fsSprite',
-        targets: [
-          {
-            format,
-            blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-            },
-          },
-        ],
-      },
-    });
-
     void device.lost.then(() => {
-      this.onLostCallback?.();
+      if (!this.recovered) {
+        this.recovered = true;
+        this.onLostCallback?.();
+      }
     });
   }
 
@@ -277,14 +186,167 @@ export class WebGpuBackend implements IGpuBackend {
   ): Promise<WebGpuBackend | null> {
     if (typeof navigator === 'undefined' || !navigator.gpu) return null;
     try {
-      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      const adapter =
+        (await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })) ??
+        (await navigator.gpu.requestAdapter());
       if (!adapter) return null;
       const device = await adapter.requestDevice();
-      const context = canvas.getContext('webgpu');
-      if (!context) return null;
       const format = navigator.gpu.getPreferredCanvasFormat();
+
+      device.pushErrorScope('validation');
+      const module = device.createShaderModule({ code: WGSL_CODE });
+      const info = await module.getCompilationInfo();
+      if (info.messages.some((m) => m.type === 'error')) {
+        await device.popErrorScope();
+        device.destroy();
+        return null;
+      }
+
+      const atlasTexture = device.createTexture({
+        size: [atlasWidth, atlasHeight, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      const copy = new Uint8Array(initialPixels);
+      device.queue.writeTexture(
+        { texture: atlasTexture },
+        copy,
+        { bytesPerRow: atlasWidth * 4, rowsPerImage: atlasHeight },
+        { width: atlasWidth, height: atlasHeight },
+      );
+
+      const sampler = device.createSampler({
+        magFilter: 'nearest',
+        minFilter: 'nearest',
+        addressModeU: 'clamp-to-edge',
+        addressModeV: 'clamp-to-edge',
+      });
+
+      const skyUniformBuffer = device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+
+      const instanceBytes = MAX_INSTANCES_PER_PASS * FLOATS_PER_INSTANCE * 4;
+      const alphaBuffer = device.createBuffer({
+        size: instanceBytes,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      const addBuffer = device.createBuffer({
+        size: instanceBytes,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+
+      const bindGroupLayout = device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} },
+          { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+          { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        ],
+      });
+
+      const pipelineLayout = device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout],
+      });
+
+      const bindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: skyUniformBuffer } },
+          { binding: 1, resource: atlasTexture.createView() },
+          { binding: 2, resource: sampler },
+        ],
+      });
+
+      const instanceLayout: GPUVertexBufferLayout = {
+        arrayStride: FLOATS_PER_INSTANCE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x4' },
+          { shaderLocation: 1, offset: 16, format: 'float32x4' },
+          { shaderLocation: 2, offset: 32, format: 'float32x4' },
+          { shaderLocation: 3, offset: 48, format: 'float32x4' },
+        ],
+      };
+
+      const [skyPipeline, alphaPipeline, addPipeline] = await Promise.all([
+        device.createRenderPipelineAsync({
+          layout: pipelineLayout,
+          vertex: { module, entryPoint: 'vsSky' },
+          fragment: { module, entryPoint: 'fsSky', targets: [{ format }] },
+        }),
+        device.createRenderPipelineAsync({
+          layout: pipelineLayout,
+          vertex: { module, entryPoint: 'vsSprite', buffers: [instanceLayout] },
+          fragment: {
+            module,
+            entryPoint: 'fsSprite',
+            targets: [
+              {
+                format,
+                blend: {
+                  color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                  alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                },
+              },
+            ],
+          },
+        }),
+        device.createRenderPipelineAsync({
+          layout: pipelineLayout,
+          vertex: { module, entryPoint: 'vsSprite', buffers: [instanceLayout] },
+          fragment: {
+            module,
+            entryPoint: 'fsSprite',
+            targets: [
+              {
+                format,
+                blend: {
+                  color: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' },
+                  alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+                },
+              },
+            ],
+          },
+        }),
+      ]);
+
+      const validationErr = await device.popErrorScope();
+      if (validationErr) {
+        device.destroy();
+        return null;
+      }
+
+      // Only bind the canvas to 'webgpu' once shaders & pipelines are 100% verified,
+      // keeping the canvas untouched for WebGL2 if WebGPU pipeline creation fails.
+      const context = canvas.getContext('webgpu');
+      if (!context) {
+        device.destroy();
+        return null;
+      }
       context.configure({ device, format, alphaMode: 'opaque' });
-      return new WebGpuBackend(device, context, format, atlasWidth, atlasHeight, initialPixels, onLost);
+
+      const backend = new WebGpuBackend(
+        device,
+        context,
+        format,
+        skyPipeline,
+        alphaPipeline,
+        addPipeline,
+        skyUniformBuffer,
+        alphaBuffer,
+        addBuffer,
+        atlasTexture,
+        bindGroup,
+        onLost,
+      );
+      device.addEventListener('uncapturederror', () => {
+        if (!backend.recovered) {
+          backend.recovered = true;
+          backend.onLostCallback?.();
+        }
+      });
+      return backend;
     } catch {
       return null;
     }
@@ -352,8 +414,18 @@ export class WebGpuBackend implements IGpuBackend {
       );
     }
 
+    let view: GPUTextureView;
+    try {
+      view = this.context.getCurrentTexture().createView();
+    } catch {
+      if (!this.recovered) {
+        this.recovered = true;
+        this.onLostCallback?.();
+      }
+      return 0;
+    }
+
     const encoder = this.device.createCommandEncoder();
-    const view = this.context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {

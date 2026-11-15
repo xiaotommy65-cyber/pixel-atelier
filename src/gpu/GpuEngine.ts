@@ -24,7 +24,7 @@ export class GpuEngine {
     bottom: hexToRgb01('#fff2df'),
     cozyFilter: true,
   };
-  private onBackendChange?: (kind: GpuBackendKind) => void;
+  private onBackendChange?: (kind: GpuBackendKind, canvas?: HTMLCanvasElement) => void;
   private lastStats: GpuFrameStats = {
     backend: 'initializing',
     drawCalls: 0,
@@ -35,7 +35,7 @@ export class GpuEngine {
 
   constructor(
     canvas: HTMLCanvasElement,
-    onBackendChange?: (kind: GpuBackendKind) => void,
+    onBackendChange?: (kind: GpuBackendKind, canvas?: HTMLCanvasElement) => void,
     atlas: TextureAtlas = new TextureAtlas(),
   ) {
     this.canvas = canvas;
@@ -50,10 +50,22 @@ export class GpuEngine {
       this.atlas.height,
       this.atlas.pixels,
       () => {
-        // Auto-recover to WebGL2 if WebGPU device is lost
+        // Auto-recover to WebGL2 if WebGPU device is lost or hits a runtime error.
+        // Because an HTMLCanvasElement locked to 'webgpu' cannot switch context type,
+        // clone a fresh canvas into the DOM when needed.
         this.backend = null;
+        let targetCanvas = this.canvas;
+        if (this.canvas.parentElement) {
+          const fresh = document.createElement('canvas');
+          fresh.className = this.canvas.className;
+          fresh.width = this.canvas.width;
+          fresh.height = this.canvas.height;
+          this.canvas.replaceWith(fresh);
+          this.canvas = fresh;
+          targetCanvas = fresh;
+        }
         const gl2 = WebGl2Backend.tryCreate(
-          this.canvas,
+          targetCanvas,
           this.atlas.width,
           this.atlas.height,
           this.atlas.pixels,
@@ -61,7 +73,7 @@ export class GpuEngine {
         if (gl2) {
           this.backend = gl2;
           this.lastStats.backend = 'webgl2';
-          this.onBackendChange?.('webgl2');
+          this.onBackendChange?.('webgl2', targetCanvas);
         }
       },
     );
@@ -69,7 +81,7 @@ export class GpuEngine {
     if (gpu) {
       this.backend = gpu;
       this.lastStats.backend = 'webgpu';
-      this.onBackendChange?.('webgpu');
+      this.onBackendChange?.('webgpu', this.canvas);
       return 'webgpu';
     }
 

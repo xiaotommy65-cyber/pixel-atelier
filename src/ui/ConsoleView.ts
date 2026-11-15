@@ -9,7 +9,7 @@ export type ConsolePhase = 'empty' | 'booting' | 'running';
 
 const BOOT_SEC = 1.35;
 const SLOT_CARD_W = 46;
-const DEFAULT_SLOT_HINT = '◀ 卡槽：把下面的卡匣拖進來！';
+const DEFAULT_SLOT_HINT = '◀ 卡槽：點選或拖曳卡匣插入！';
 
 type Dir = 'left' | 'right' | 'up' | 'down';
 
@@ -24,13 +24,24 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return node;
 }
 
+function pulseHaptic(ms = 9): void {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(ms);
+    } catch {
+      // Ignore haptic blocks on restricted browsers
+    }
+  }
+}
+
 /**
  * Switch-style handheld: Joy-Con (L) | screen body | Joy-Con (R),
- * with a top cartridge slot and a game card case you tap or drag cards from.
+ * with L/R shoulder bumpers, thumb-slide D-Pad, haptic tactile press travel,
+ * top cartridge slot, and a game card case you tap or drag cards from.
  */
 export class ConsoleView {
   public readonly element: HTMLElement;
-  public readonly canvas: HTMLCanvasElement;
+  public canvas: HTMLCanvasElement;
 
   private host: EngineHost;
   private atlas: TextureAtlas;
@@ -68,6 +79,7 @@ export class ConsoleView {
   private statusHintEl: HTMLElement;
 
   private touchInput = blankInput();
+  private padInput: Record<Dir, boolean> = { left: false, right: false, up: false, down: false };
   private keyInput = blankInput();
   private stickInput: Record<Dir, boolean> = { left: false, right: false, up: false, down: false };
 
@@ -89,29 +101,45 @@ export class ConsoleView {
     // ---------- Joy-Con L ----------
     const left = el('div', 'joycon is-left');
     left.appendChild(el('div', 'jc-rail-glow'));
+
+    const lBumper = el('button', 'jc-bumper is-l', 'L');
+    lBumper.type = 'button';
+    lBumper.title = 'L：重新開始當前卡匣';
+    lBumper.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      lBumper.classList.add('is-pressed');
+      pulseHaptic(10);
+      this.host.playUiSound('snap');
+      if (this.phase !== 'empty') this.host.runner.restart();
+    });
+    const clearLBumper = () => lBumper.classList.remove('is-pressed');
+    lBumper.addEventListener('pointerup', clearLBumper);
+    lBumper.addEventListener('pointercancel', clearLBumper);
+    lBumper.addEventListener('pointerleave', clearLBumper);
+
     const lTop = el('div', 'jc-row');
     const minusBtn = el('button', 'jc-sys-btn', '−');
     minusBtn.type = 'button';
     minusBtn.title = '− 換下一張卡匣';
-    minusBtn.addEventListener('click', () => this.cycleCard());
+    minusBtn.addEventListener('click', () => {
+      pulseHaptic(10);
+      this.cycleCard();
+    });
     lTop.appendChild(minusBtn);
 
     const lStick = this.buildStick();
-    const dirs = el('div', 'diamond');
-    dirs.append(
-      this.holdButton('dia-btn dia-n', '▲', 'up', '上'),
-      this.holdButton('dia-btn dia-w', '◀', 'left', '左'),
-      this.holdButton('dia-btn dia-e', '▶', 'right', '右'),
-      this.holdButton('dia-btn dia-s', '▼', 'down', '下'),
-    );
+    const dirs = this.buildSlideDpad();
 
     const lBottom = el('div', 'jc-row');
     const captureBtn = el('button', 'jc-sys-btn is-square', '◉');
     captureBtn.type = 'button';
     captureBtn.title = '截圖：儲存 PICO-8 風紀念卡匣 PNG';
-    captureBtn.addEventListener('click', () => this.requestCapture());
+    captureBtn.addEventListener('click', () => {
+      pulseHaptic(12);
+      this.requestCapture();
+    });
     lBottom.append(makeLeds(), captureBtn);
-    left.append(lTop, lStick, dirs, lBottom);
+    left.append(lBumper, lTop, lStick, dirs, lBottom);
 
     // ---------- Console body ----------
     const body = el('div', 'console-body');
@@ -128,7 +156,10 @@ export class ConsoleView {
     this.slotHint = el('span', 'slot-hint', DEFAULT_SLOT_HINT);
     this.ejectBtn = el('button', 'eject-btn panel-hidden', '⏏ 退出卡匣');
     this.ejectBtn.type = 'button';
-    this.ejectBtn.addEventListener('click', () => this.eject());
+    this.ejectBtn.addEventListener('click', () => {
+      pulseHaptic(10);
+      this.eject();
+    });
     slotSide.append(this.slotLed, this.slotHint, this.ejectBtn);
 
     const topbar = el('div', 'screen-topbar');
@@ -148,7 +179,7 @@ export class ConsoleView {
     this.canvas.height = 540;
 
     this.insertPrompt = el('div', 'screen-overlay insert-prompt');
-    this.insertPrompt.appendChild(el('div', 'insert-pill', '⬆ 請插入遊戲卡匣'));
+    this.insertPrompt.appendChild(el('div', 'insert-pill', '⬇ 請從下方點選遊戲卡匣插入'));
 
     this.resultOverlay = el('div', 'screen-overlay is-dim panel-hidden');
     const card = el('div', 'overlay-card');
@@ -157,6 +188,7 @@ export class ConsoleView {
     const replayBtn = el('button', 'toy-btn is-primary', '✨ 再玩一次！');
     replayBtn.type = 'button';
     replayBtn.addEventListener('click', () => {
+      pulseHaptic(10);
       this.host.playUiSound('snap');
       this.host.runner.restart();
     });
@@ -173,10 +205,13 @@ export class ConsoleView {
       speakerL.appendChild(el('span'));
       speakerR.appendChild(el('span'));
     }
-    const legend = el('div', 'body-legend', 'B 跳躍 · A 火花 · X 精靈派對 · F3 碰撞框 · + 重開 · ⌂ 退卡');
+    const legend = el('div', 'body-legend', 'B 跳躍 · A/R 火花 · X 精靈派對 · F3 碰撞框 · L/+ 重開 · ⌂ 退卡');
     this.benchBtn = el('button', 'bench-btn', '✨ 1,150+ GPU 精靈派對');
     this.benchBtn.type = 'button';
-    this.benchBtn.addEventListener('click', () => this.toggleBenchmark());
+    this.benchBtn.addEventListener('click', () => {
+      pulseHaptic(10);
+      this.toggleBenchmark();
+    });
     footer.append(speakerL, legend, this.benchBtn, speakerR);
 
     body.append(vol, this.slotEl, slotSide, topbar, this.screenFrame, this.statusHintEl, footer);
@@ -184,21 +219,28 @@ export class ConsoleView {
     // ---------- Joy-Con R ----------
     const right = el('div', 'joycon is-right');
     right.appendChild(el('div', 'jc-rail-glow'));
+
+    const rBumper = this.holdButton('jc-bumper is-r', 'R', 'action', 'R：火花 / 發射星光（等同 A 鍵）');
+
     const rTop = el('div', 'jc-row');
     const plusBtn = el('button', 'jc-sys-btn', '+');
     plusBtn.type = 'button';
     plusBtn.title = '+ 重新開始這張卡匣';
     plusBtn.addEventListener('click', () => {
+      pulseHaptic(10);
       this.host.playUiSound('snap');
       if (this.phase !== 'empty') this.host.runner.restart();
     });
     rTop.appendChild(plusBtn);
 
-    const abxy = el('div', 'diamond');
+    const abxy = el('div', 'diamond is-abxy');
     const xBtn = el('button', 'dia-btn is-x dia-n', 'X');
     xBtn.type = 'button';
     xBtn.title = 'X：1,150+ GPU 精靈派對';
-    xBtn.addEventListener('click', () => this.toggleBenchmark());
+    xBtn.addEventListener('click', () => {
+      pulseHaptic(10);
+      this.toggleBenchmark();
+    });
     abxy.append(
       xBtn,
       this.holdButton('dia-btn is-y dia-w', 'Y', 'jump', 'Y：跳躍'),
@@ -210,9 +252,12 @@ export class ConsoleView {
     const homeBtn = el('button', 'jc-sys-btn is-home', '⌂');
     homeBtn.type = 'button';
     homeBtn.title = 'HOME：退出卡匣回到主畫面';
-    homeBtn.addEventListener('click', () => this.eject());
+    homeBtn.addEventListener('click', () => {
+      pulseHaptic(12);
+      this.eject();
+    });
     rBottom.append(homeBtn, makeLeds());
-    right.append(rTop, abxy, rStick, rBottom);
+    right.append(rBumper, rTop, abxy, rStick, rBottom);
 
     consoleEl.append(left, body, right);
 
@@ -287,13 +332,14 @@ export class ConsoleView {
 
   public getInput(): InputState {
     const t = this.touchInput;
+    const p = this.padInput;
     const k = this.keyInput;
     const s = this.stickInput;
     return {
-      left: t.left || k.left || s.left,
-      right: t.right || k.right || s.right,
-      up: t.up || k.up || s.up,
-      down: t.down || k.down || s.down,
+      left: t.left || p.left || k.left || s.left,
+      right: t.right || p.right || k.right || s.right,
+      up: t.up || p.up || k.up || s.up,
+      down: t.down || p.down || k.down || s.down,
       jump: t.jump || k.jump,
       action: t.action || k.action,
       restart: t.restart || k.restart,
@@ -346,6 +392,7 @@ export class ConsoleView {
         this.startBoot(id);
         this.busy = false;
       };
+      pulseHaptic(14);
       this.host.playUiSound('snap');
       if (instant) {
         src.style.transform = '';
@@ -571,7 +618,11 @@ export class ConsoleView {
       const sx = e.clientX;
       const sy = e.clientY;
       let dragging = false;
-      card.setPointerCapture(e.pointerId);
+      try {
+        card.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore capture errors on synthetic or unsupported pointer events
+      }
 
       const move = (ev: PointerEvent) => {
         const dx = ev.clientX - sx;
@@ -622,6 +673,85 @@ export class ConsoleView {
     this.host.reactMomo();
   }
 
+  /**
+   * Tactile Switch D-Pad with thumb-slide support:
+   * sliding your thumb across directions updates Left/Right/Up/Down seamlessly without lifting.
+   */
+  private buildSlideDpad(): HTMLElement {
+    const pad = el('div', 'diamond is-dpad');
+    const upBtn = el('button', 'dia-btn dia-n', '▲');
+    const leftBtn = el('button', 'dia-btn dia-w', '◀');
+    const rightBtn = el('button', 'dia-btn dia-e', '▶');
+    const downBtn = el('button', 'dia-btn dia-s', '▼');
+    for (const [b, title] of [
+      [upBtn, '上'],
+      [leftBtn, '左'],
+      [rightBtn, '右'],
+      [downBtn, '下'],
+    ] as const) {
+      b.type = 'button';
+      b.title = title;
+    }
+    pad.append(upBtn, leftBtn, rightBtn, downBtn);
+
+    let pid: number | null = null;
+    const syncVisual = () => {
+      upBtn.classList.toggle('is-pressed', this.padInput.up);
+      leftBtn.classList.toggle('is-pressed', this.padInput.left);
+      rightBtn.classList.toggle('is-pressed', this.padInput.right);
+      downBtn.classList.toggle('is-pressed', this.padInput.down);
+    };
+
+    const applyAt = (cx: number, cy: number) => {
+      const r = pad.getBoundingClientRect();
+      const dx = (cx - (r.left + r.width / 2)) / (r.width / 2);
+      const dy = (cy - (r.top + r.height / 2)) / (r.height / 2);
+      const prevL = this.padInput.left;
+      const prevR = this.padInput.right;
+      const prevU = this.padInput.up;
+      const prevD = this.padInput.down;
+
+      this.padInput.left = dx < -0.22;
+      this.padInput.right = dx > 0.22;
+      this.padInput.up = dy < -0.26;
+      this.padInput.down = dy > 0.26;
+
+      if (
+        this.padInput.left !== prevL ||
+        this.padInput.right !== prevR ||
+        this.padInput.up !== prevU ||
+        this.padInput.down !== prevD
+      ) {
+        pulseHaptic(6);
+      }
+      syncVisual();
+    };
+
+    const clear = () => {
+      pid = null;
+      this.padInput = { left: false, right: false, up: false, down: false };
+      syncVisual();
+    };
+
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.host.unlockAudio();
+      pid = e.pointerId;
+      try {
+        pad.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore capture errors on synthetic or unsupported pointer events
+      }
+      applyAt(e.clientX, e.clientY);
+    });
+    pad.addEventListener('pointermove', (e) => {
+      if (pid === e.pointerId) applyAt(e.clientX, e.clientY);
+    });
+    pad.addEventListener('pointerup', clear);
+    pad.addEventListener('pointercancel', clear);
+    return pad;
+  }
+
   private holdButton(cls: string, label: string, key: keyof InputState, title: string): HTMLButtonElement {
     const btn = el('button', cls, label);
     btn.type = 'button';
@@ -629,6 +759,7 @@ export class ConsoleView {
     const press = (e: Event) => {
       e.preventDefault();
       this.host.unlockAudio();
+      if (!this.touchInput[key]) pulseHaptic(8);
       this.touchInput[key] = true;
       btn.classList.add('is-pressed');
     };
@@ -663,10 +794,10 @@ export class ConsoleView {
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
       const nx = dx / maxR;
       const ny = dy / maxR;
-      this.stickInput.left = nx < -0.38;
-      this.stickInput.right = nx > 0.38;
-      this.stickInput.up = ny < -0.45;
-      this.stickInput.down = ny > 0.45;
+      this.stickInput.left = nx < -0.35;
+      this.stickInput.right = nx > 0.35;
+      this.stickInput.up = ny < -0.42;
+      this.stickInput.down = ny > 0.42;
     };
     const reset = () => {
       pid = null;
@@ -678,8 +809,13 @@ export class ConsoleView {
     base.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.host.unlockAudio();
+      pulseHaptic(6);
       pid = e.pointerId;
-      base.setPointerCapture(e.pointerId);
+      try {
+        base.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore capture errors on synthetic or unsupported pointer events
+      }
       base.classList.add('is-active');
       apply(e.clientX, e.clientY);
     });

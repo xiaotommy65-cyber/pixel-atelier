@@ -160,7 +160,10 @@ function createApp() {
   const atlas = new TextureAtlas();
   const consoleView = new ConsoleView(host, atlas);
 
-  const updateGpuBadge = (kind: GpuBackendKind) => {
+  const updateGpuBadge = (kind: GpuBackendKind, activeCanvas?: HTMLCanvasElement) => {
+    if (activeCanvas) {
+      consoleView.canvas = activeCanvas;
+    }
     gpuDot.classList.toggle('is-webgpu', kind === 'webgpu');
     gpuLabel.textContent =
       kind === 'webgpu' ? 'WebGPU WGSL' : kind === 'webgl2' ? 'WebGL2 GLSL' : '初始化中';

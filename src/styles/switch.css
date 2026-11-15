@@ -165,8 +165,9 @@
   cursor: pointer;
   display: grid;
   place-items: center;
+  touch-action: manipulation;
   box-shadow: 0 3px 0 var(--ink);
-  transition: transform 100ms ease, box-shadow 100ms ease;
+  transition: transform 90ms ease, box-shadow 90ms ease;
 }
 
 .jc-sys-btn.is-square {
@@ -185,8 +186,8 @@
 
 .jc-sys-btn:active,
 .jc-sys-btn.is-pressed {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--ink);
+  transform: translateY(2.5px);
+  box-shadow: 0 0.5px 0 var(--ink);
 }
 
 /* Analog stick (functional) */
@@ -218,17 +219,60 @@
   pointer-events: none;
 }
 
+/* Curved Switch Shoulder Bumpers (L / R) */
+.jc-bumper {
+  appearance: none;
+  position: absolute;
+  top: -12px;
+  width: 68px;
+  height: 15px;
+  border: 2.5px solid var(--ink);
+  border-bottom: none;
+  background: #4e4246;
+  color: #fffaf0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  touch-action: none;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28);
+  transition: transform 80ms ease, background 80ms ease;
+}
+
+.jc-bumper.is-l {
+  left: 14px;
+  border-radius: 26px 10px 0 0;
+}
+
+.jc-bumper.is-r {
+  right: 14px;
+  border-radius: 10px 26px 0 0;
+}
+
+.jc-bumper:active,
+.jc-bumper.is-pressed {
+  transform: translateY(3px);
+  background: #67585d;
+}
+
 .stick.is-active .stick-knob {
   transition: none;
 }
 
-/* Diamond button clusters */
+/* Diamond button clusters (physical recessed socket + tactile press travel) */
 .diamond {
   display: grid;
   grid-template-columns: repeat(3, 34px);
   grid-template-rows: repeat(3, 34px);
   gap: 2px;
   touch-action: none;
+  padding: 4px;
+  border-radius: 50%;
+  background: rgba(28, 22, 25, 0.14);
+  box-shadow: inset 0 2px 4px rgba(28, 22, 25, 0.2);
 }
 
 .dia-btn {
@@ -244,9 +288,11 @@
   cursor: pointer;
   display: grid;
   place-items: center;
-  box-shadow: 0 3px 0 var(--ink);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.25),
+    0 4px 0 var(--ink);
   touch-action: none;
-  transition: transform 90ms ease, box-shadow 90ms ease, filter 90ms ease;
+  transition: transform 65ms ease, box-shadow 65ms ease, filter 65ms ease;
 }
 
 .dia-btn.is-a { background: var(--accent-honey); color: var(--ink); }
@@ -254,9 +300,13 @@
 .dia-btn.is-x { background: var(--accent-sky); color: var(--ink); }
 .dia-btn.is-y { background: var(--accent-mint); color: var(--ink); }
 
+.dia-btn:active,
 .dia-btn.is-pressed {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--ink);
+  transform: translateY(3.5px) scale(0.95);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.22),
+    0 0.5px 0 var(--ink),
+    0 0 0 3px rgba(255, 253, 248, 0.45);
   filter: brightness(1.08);
 }
 
@@ -486,6 +536,15 @@
   overflow: hidden;
   border: 3px solid #161114;
   background: #6dbcf2;
+}
+
+.screen-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 34%, transparent 56%);
 }
 
 .game-canvas {
@@ -853,49 +912,289 @@
   background: #fff1b8;
 }
 
-/* ---------- Phone portrait: screen on top, Joy-Cons side by side ---------- */
+/* ---------- Phone portrait: whole handheld + controls fit inside one mobile screen ---------- */
 @media (max-width: 760px) {
+  .switch-stage {
+    gap: 10px;
+  }
+
   .switch-console {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
       'body body'
       'left right';
-    row-gap: 12px;
-    margin-top: 56px;
+    row-gap: 14px;
+    column-gap: 6px;
+    margin-top: 38px;
+  }
+
+  .cart-slot {
+    top: -54px;
+    left: 14px;
+    transform: scale(0.84);
+    transform-origin: bottom center;
+  }
+
+  .slot-side {
+    top: -31px;
+    left: 72px;
+    gap: 5px;
+  }
+
+  .slot-hint {
+    font-size: 0.66rem;
+    padding: 2px 8px;
+  }
+
+  .eject-btn {
+    font-size: 0.66rem;
+    padding: 2px 8px;
+    touch-action: manipulation;
+  }
+
+  .top-vol {
+    top: -7px;
+    right: 22px;
   }
 
   .console-body {
     border-radius: 16px;
-    padding: 10px 9px 8px;
+    padding: 7px 7px 6px;
+    gap: 4px;
   }
 
-  .joycon {
-    padding: 12px 10px 14px;
-    gap: 10px;
+  .screen-topbar {
+    font-size: 0.64rem;
+    gap: 4px;
   }
 
-  .joycon.is-left {
-    border-right: 3px solid var(--ink);
-    border-radius: 18px 14px 14px 56px;
+  .screen-metrics {
+    gap: 4px;
   }
 
-  .joycon.is-right {
-    border-left: 3px solid var(--ink);
-    border-radius: 14px 18px 56px 14px;
+  .metric-tag {
+    padding: 1px 6px;
+  }
+
+  .screen-status-hint {
+    font-size: 0.68rem;
+  }
+
+  .body-footer {
+    gap: 6px;
   }
 
   .body-legend {
     display: none;
   }
 
+  .bench-btn {
+    padding: 3px 9px;
+    font-size: 0.66rem;
+    touch-action: manipulation;
+  }
+
+  .joycon {
+    padding: 10px 8px 10px;
+    gap: 6px;
+  }
+
+  .joycon.is-left {
+    border-right: 3px solid var(--ink);
+    border-radius: 18px 14px 14px 42px;
+  }
+
+  .joycon.is-right {
+    border-left: 3px solid var(--ink);
+    border-radius: 14px 18px 42px 14px;
+  }
+
+  .jc-bumper {
+    top: -10px;
+    width: 56px;
+    height: 12px;
+    font-size: 0.6rem;
+  }
+
+  .jc-bumper.is-l {
+    left: 10px;
+  }
+
+  .jc-bumper.is-r {
+    right: 10px;
+  }
+
+  .jc-sys-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 0.88rem;
+  }
+
+  .jc-sys-btn.is-square {
+    width: 24px;
+    height: 24px;
+  }
+
+  .jc-sys-btn.is-home {
+    width: 28px;
+    height: 28px;
+    font-size: 0.88rem;
+  }
+
+  .diamond {
+    grid-template-columns: repeat(3, 36px);
+    grid-template-rows: repeat(3, 36px);
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .dia-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 0.82rem;
+  }
+
+  .card-case {
+    padding: 9px 10px 12px;
+    gap: 7px;
+  }
+
+  .case-head strong {
+    font-size: 0.86rem;
+  }
+
+  .case-head span {
+    font-size: 0.68rem;
+  }
+
   .card-row {
     flex-wrap: nowrap;
     overflow-x: auto;
-    padding-bottom: 4px;
+    gap: 8px;
+    padding-bottom: 3px;
   }
 
   .game-card {
-    flex-shrink: 0;
-    width: 108px;
+    flex: 1 0 94px;
+    max-width: 124px;
+    padding: 4px 6px 6px;
+  }
+
+  .card-title {
+    font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .joycon .stick {
+    display: none;
+  }
+}
+
+/* ---------- Phone landscape: horizontal 3-column Nintendo Switch ergonomics ---------- */
+@media (max-height: 540px) and (orientation: landscape) {
+  .switch-console {
+    grid-template-columns: 104px minmax(0, 1fr) 104px;
+    grid-template-areas: 'left body right';
+    gap: 0;
+    margin-top: 28px;
+  }
+
+  .cart-slot {
+    top: -58px;
+    left: 14px;
+    transform: scale(0.72);
+    transform-origin: bottom center;
+  }
+
+  .slot-side {
+    top: -27px;
+    left: 64px;
+  }
+
+  .console-body {
+    border-radius: 8px;
+    padding: 6px 7px 4px;
+    gap: 2px;
+  }
+
+  .screen-frame {
+    width: 100%;
+    max-width: min(100%, calc((100dvh - 166px) * 16 / 9));
+    margin: 0 auto;
+  }
+
+  .screen-topbar {
+    font-size: 0.6rem;
+  }
+
+  .screen-status-hint,
+  .body-legend,
+  .speaker {
+    display: none;
+  }
+
+  .joycon {
+    padding: 6px 5px 6px;
+    gap: 3px;
+  }
+
+  .joycon.is-left {
+    border-right: none;
+    border-radius: 40px 8px 8px 40px / 44px 8px 8px 44px;
+  }
+
+  .joycon.is-right {
+    border-left: none;
+    border-radius: 8px 40px 40px 8px / 8px 44px 44px 8px;
+  }
+
+  .jc-bumper {
+    top: -9px;
+    width: 48px;
+    height: 11px;
+    font-size: 0.56rem;
+  }
+
+  .joycon .stick {
+    display: block;
+    width: 36px;
+    height: 36px;
+  }
+
+  .stick-knob {
+    width: 24px;
+    height: 24px;
+    margin: -12px 0 0 -12px;
+  }
+
+  .diamond {
+    grid-template-columns: repeat(3, 25px);
+    grid-template-rows: repeat(3, 25px);
+    gap: 1.5px;
+    padding: 2px;
+  }
+
+  .dia-btn {
+    width: 25px;
+    height: 25px;
+    font-size: 0.64rem;
+  }
+
+  .jc-sys-btn {
+    width: 20px;
+    height: 20px;
+    font-size: 0.72rem;
+  }
+
+  .jc-sys-btn.is-square {
+    width: 20px;
+    height: 20px;
+  }
+
+  .jc-sys-btn.is-home {
+    width: 22px;
+    height: 22px;
+    font-size: 0.74rem;
   }
 }
