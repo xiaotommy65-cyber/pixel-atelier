@@ -15,6 +15,48 @@ export type SoundPreset =
   | 'ignite'
   | 'snap';
 
+export type TactileSwitchProfile = 'face' | 'dpad' | 'bumper' | 'system' | 'ui' | 'stick';
+export type TactilePhase = 'down' | 'up';
+
+interface TactileAcousticSpec {
+  filterHz: number;
+  q: number;
+  clickMs: number;
+  noiseGain: number;
+  thumpStartHz: number;
+  thumpEndHz: number;
+  thumpMs: number;
+  thumpGain: number;
+  thumpWave: OscillatorType;
+}
+
+const TACTILE_SPECS: Record<TactileSwitchProfile, Record<TactilePhase, TactileAcousticSpec>> = {
+  face: {
+    down: { filterHz: 3600, q: 2.4, clickMs: 7, noiseGain: 0.44, thumpStartHz: 180, thumpEndHz: 65, thumpMs: 18, thumpGain: 0.34, thumpWave: 'triangle' },
+    up: { filterHz: 4600, q: 2.8, clickMs: 4.5, noiseGain: 0.19, thumpStartHz: 240, thumpEndHz: 135, thumpMs: 10, thumpGain: 0.11, thumpWave: 'sine' },
+  },
+  dpad: {
+    down: { filterHz: 1950, q: 1.6, clickMs: 9, noiseGain: 0.38, thumpStartHz: 135, thumpEndHz: 54, thumpMs: 22, thumpGain: 0.42, thumpWave: 'sine' },
+    up: { filterHz: 2700, q: 1.8, clickMs: 5, noiseGain: 0.14, thumpStartHz: 180, thumpEndHz: 110, thumpMs: 10, thumpGain: 0.08, thumpWave: 'sine' },
+  },
+  bumper: {
+    down: { filterHz: 4300, q: 2.6, clickMs: 6, noiseGain: 0.46, thumpStartHz: 210, thumpEndHz: 82, thumpMs: 15, thumpGain: 0.29, thumpWave: 'triangle' },
+    up: { filterHz: 5200, q: 2.6, clickMs: 4, noiseGain: 0.2, thumpStartHz: 260, thumpEndHz: 145, thumpMs: 9, thumpGain: 0.11, thumpWave: 'sine' },
+  },
+  system: {
+    down: { filterHz: 3100, q: 2.2, clickMs: 6, noiseGain: 0.36, thumpStartHz: 165, thumpEndHz: 72, thumpMs: 16, thumpGain: 0.28, thumpWave: 'sine' },
+    up: { filterHz: 3900, q: 2.2, clickMs: 4, noiseGain: 0.15, thumpStartHz: 215, thumpEndHz: 120, thumpMs: 9, thumpGain: 0.09, thumpWave: 'sine' },
+  },
+  ui: {
+    down: { filterHz: 2700, q: 2.0, clickMs: 6.5, noiseGain: 0.32, thumpStartHz: 150, thumpEndHz: 68, thumpMs: 16, thumpGain: 0.25, thumpWave: 'triangle' },
+    up: { filterHz: 3450, q: 2.0, clickMs: 4, noiseGain: 0.13, thumpStartHz: 205, thumpEndHz: 115, thumpMs: 9, thumpGain: 0.08, thumpWave: 'sine' },
+  },
+  stick: {
+    down: { filterHz: 1600, q: 1.4, clickMs: 6, noiseGain: 0.28, thumpStartHz: 120, thumpEndHz: 58, thumpMs: 14, thumpGain: 0.24, thumpWave: 'sine' },
+    up: { filterHz: 2100, q: 1.5, clickMs: 3.5, noiseGain: 0.1, thumpStartHz: 145, thumpEndHz: 95, thumpMs: 8, thumpGain: 0.06, thumpWave: 'sine' },
+  },
+};
+
 export interface PentatonicKey {
   note: string;
   label: string;
@@ -91,6 +133,7 @@ export class ToySynth {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
+  private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
   private waveform: SynthWaveform = 'triangle';
   private volume = 0.26;
@@ -98,6 +141,7 @@ export class ToySynth {
 
   private pendingQueue = new Map<SoundPreset, number>();
   private lastPlayedAt = new Map<SoundPreset, number>();
+  private lastTactileAt = new Map<string, number>();
   private bgmTheme: BgmTheme | null = null;
   private bgmStep = 0;
   private bgmTimer = 0;
@@ -122,6 +166,15 @@ export class ToySynth {
 
         this.masterGain.connect(this.compressor);
         this.compressor.connect(this.ctx.destination);
+
+        const len = Math.max(256, Math.floor(this.ctx.sampleRate * 0.04));
+        const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+        const ch = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          const hash = Math.sin((i + 1) * 12.9898) * 43758.5453;
+          ch[i] = (hash - Math.floor(hash)) * 2 - 1;
+        }
+        this.noiseBuffer = buf;
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -286,6 +339,64 @@ export class ToySynth {
         this.playTone(760 * jit, 520 * jit, 0.035, 0, 'sine', 0.3);
         break;
     }
+  }
+
+  /**
+   * Two-stage mechanical/rubber-dome tactile click (crisp bandpass noise snap + housing thump).
+   * Fires independently of game SFX queue with zero GC noise allocation.
+   */
+  public playTactile(profile: TactileSwitchProfile, phase: TactilePhase = 'down'): void {
+    if (this.muted || typeof window === 'undefined') return;
+    if (!this.ctx) this.unlock();
+    const ctx = this.ctx;
+    const dest = this.masterGain ?? ctx?.destination;
+    if (!ctx || !dest || ctx.state !== 'running') return;
+
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const key = `${profile}:${phase}`;
+    const last = this.lastTactileAt.get(key) ?? -Infinity;
+    if (nowMs - last < 12) return;
+    this.lastTactileAt.set(key, nowMs);
+
+    const spec = TACTILE_SPECS[profile][phase];
+    const jit = this.nextPitchJitter(0.045);
+    const t0 = ctx.currentTime;
+    const baseGain = this.volume * 1.15;
+
+    if (this.noiseBuffer) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(spec.filterHz * jit, t0);
+      bp.Q.setValueAtTime(spec.q, t0);
+
+      const nGain = ctx.createGain();
+      const dur = spec.clickMs / 1000;
+      nGain.gain.setValueAtTime(0.0001, t0);
+      nGain.gain.linearRampToValueAtTime(Math.max(0.002, baseGain * spec.noiseGain), t0 + 0.0012);
+      nGain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+      src.connect(bp);
+      bp.connect(nGain);
+      nGain.connect(dest);
+      src.start(t0);
+      src.stop(t0 + dur + 0.005);
+    }
+
+    const osc = ctx.createOscillator();
+    const oGain = ctx.createGain();
+    const oDur = spec.thumpMs / 1000;
+    osc.type = spec.thumpWave;
+    osc.frequency.setValueAtTime(spec.thumpStartHz * jit, t0);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(35, spec.thumpEndHz), t0 + oDur);
+    oGain.gain.setValueAtTime(0.0001, t0);
+    oGain.gain.linearRampToValueAtTime(Math.max(0.002, baseGain * spec.thumpGain), t0 + 0.0015);
+    oGain.gain.exponentialRampToValueAtTime(0.0001, t0 + oDur);
+    osc.connect(oGain);
+    oGain.connect(dest);
+    osc.start(t0);
+    osc.stop(t0 + oDur + 0.005);
   }
 
   public setBgmTheme(theme: BgmTheme | null): void {

@@ -14,6 +14,7 @@ import type { GpuBackendKind } from './gpu/GpuTypes.ts';
 import { TextureAtlas } from './gpu/TextureAtlas.ts';
 import { exportCartridgeCardPng } from './ui/CardArt.ts';
 import { ConsoleView } from './ui/ConsoleView.ts';
+import { installGlobalTactileFeedback } from './ui/dom.ts';
 import { drawAtlasSpriteToCanvas } from './ui/MomoMascot.ts';
 import { SpriteAtelierView } from './ui/SpriteAtelierView.ts';
 import { SynthPianoView } from './ui/SynthPianoView.ts';
@@ -108,6 +109,7 @@ function createApp() {
   };
 
   const host = new EngineHost(runner, synth, save, triggerMomoHappy);
+  installGlobalTactileFeedback(shell, (profile, phase) => host.playTactile(profile, phase));
 
   const swatchBox = document.createElement('div');
   swatchBox.className = 'shell-swatches';
@@ -124,7 +126,6 @@ function createApp() {
     btn.style.background = `linear-gradient(90deg, ${theme.left} 50%, ${theme.right} 50%)`;
     btn.title = `外殼換色：${theme.label}`;
     btn.addEventListener('click', () => {
-      host.playUiSound('snap');
       activeShell = theme.id;
       if (theme.id === 'mint') {
         document.documentElement.removeAttribute('data-shell');
@@ -148,7 +149,7 @@ function createApp() {
     host.unlockAudio();
     const muted = synth.toggleMute();
     muteBtn.textContent = muted ? '🔇 靜音中' : '🔊 音效開';
-    if (!muted) synth.playPreset('snap');
+    if (!muted) synth.playTactile('ui', 'down');
   });
 
   let activeStation: StationId = 'play';
@@ -200,7 +201,6 @@ function createApp() {
   };
 
   landscapeBtn.addEventListener('click', () => {
-    host.playUiSound('snap');
     setHandheldLandscape(!handheldLandscape);
   });
 
@@ -266,7 +266,6 @@ function createApp() {
     btn.dataset.station = st.id;
     btn.innerHTML = `<span class="tab-icon">${st.icon}</span><span>${st.label}</span>`;
     btn.addEventListener('click', () => {
-      host.playUiSound('snap');
       switchStation(st.id);
     });
     tabBtns.set(st.id, btn);

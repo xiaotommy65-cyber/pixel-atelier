@@ -39,7 +39,6 @@ export class WorkshopView {
     `;
     head.appendChild(
       btn('toy-btn', '↺ 恢復原廠參數', undefined, () => {
-        this.host.playUiSound('snap');
         Object.assign(runner.getParams(), DEFAULT_RUNTIME_PARAMS);
         this.syncSliders();
       }),
@@ -106,7 +105,6 @@ export class WorkshopView {
     for (const r of WORKSHOP_RECIPES) {
       recipeRow.appendChild(
         btn('toy-btn is-honey', r.label, undefined, () => {
-          this.host.playUiSound('snap');
           this.codeBox.value = r.code;
           this.sandboxDraft = r.code;
         }),
@@ -114,7 +112,6 @@ export class WorkshopView {
     }
     recipeRow.appendChild(
       btn('toy-btn', '📄 預設基地', undefined, () => {
-        this.host.playUiSound('snap');
         this.codeBox.value = SANDBOX_DEFAULT_SCRIPT;
         this.sandboxDraft = SANDBOX_DEFAULT_SCRIPT;
       }),
@@ -122,7 +119,6 @@ export class WorkshopView {
 
     dndRecipeRow.appendChild(
       btn('toy-btn is-honey', '🐉 恢復預設餘燼迷宮 JSON', undefined, () => {
-        this.host.playUiSound('snap');
         this.codeBox.value = DND_DEFAULT_MODULE_JSON;
         this.dndDraft = DND_DEFAULT_MODULE_JSON;
       }),
@@ -152,11 +148,9 @@ export class WorkshopView {
     };
 
     sandboxTab.addEventListener('click', () => {
-      this.host.playUiSound('snap');
       setMode('sandbox');
     });
     dndTab.addEventListener('click', () => {
-      this.host.playUiSound('snap');
       setMode('dnd');
     });
 

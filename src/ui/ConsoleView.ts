@@ -4,7 +4,7 @@ import type { CartridgeId, InputState, RenderSceneSnapshot, RpgHudSnapshot } fro
 import type { GpuFrameStats } from '../gpu/GpuTypes.ts';
 import type { TextureAtlas } from '../gpu/TextureAtlas.ts';
 import { renderCardArt } from './CardArt.ts';
-import { bindMomentaryButton, bindPointerDrag, btn, el } from './dom.ts';
+import { bindMomentaryButton, bindPointerDrag, btn, el, pulseHaptic, triggerImpactRing } from './dom.ts';
 
 export type ConsolePhase = 'empty' | 'booting' | 'running';
 
@@ -18,16 +18,6 @@ function blankInput(): InputState {
   return { left: false, right: false, up: false, down: false, jump: false, action: false, restart: false };
 }
 
-function pulseHaptic(ms = 9): void {
-  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-    try {
-      navigator.vibrate(ms);
-    } catch {
-      // Ignore haptic blocks on restricted browsers
-    }
-  }
-}
-
 type SlotState =
   | { phase: 'empty' }
   | { phase: 'booting'; id: CartridgeId; timer: number }
@@ -35,8 +25,8 @@ type SlotState =
 
 /**
  * Switch-style handheld: Joy-Con (L) | screen body | Joy-Con (R),
- * with L/R shoulder bumpers, thumb-slide D-Pad, haptic tactile press travel,
- * top cartridge slot, RPG HUD overlay for turn-based cartridges, and game card case.
+ * with L/R shoulder bumpers, 3D-tilting thumb-slide D-Pad, dual-stage tactile switch feedback,
+ * keyboard-synced Joy-Con depression, top cartridge slot, RPG HUD overlay, and game card case.
  */
 export class ConsoleView {
   public readonly element: HTMLElement;
@@ -53,7 +43,17 @@ export class ConsoleView {
   private lastBannerState: 'playing' | 'won' | 'lost' = 'playing';
 
   private consoleEl: HTMLElement;
+  private leftJoyconEl: HTMLElement;
+  private rightJoyconEl: HTMLElement;
   private ledStrips: HTMLElement[] = [];
+  private dpadEl!: HTMLElement;
+  private dpadBtns!: Record<Dir, HTMLButtonElement>;
+  private btnA!: HTMLButtonElement;
+  private btnB!: HTMLButtonElement;
+  private btnY!: HTMLButtonElement;
+  private btnX!: HTMLButtonElement;
+  private touchButtons = new Set<HTMLElement>();
+  private recoilTimers = new WeakMap<HTMLElement, number>();
   private cardEls = new Map<CartridgeId, HTMLElement>();
   private cardArtImgs = new Map<CartridgeId, HTMLImageElement[]>();
   private recordEls = new Map<CartridgeId, HTMLElement>();
@@ -111,19 +111,26 @@ export class ConsoleView {
 
     // ---------- Joy-Con L ----------
     const left = el('div', 'joycon is-left');
+    this.leftJoyconEl = left;
     left.appendChild(el('div', 'jc-rail-glow'));
 
     const lBumper = btn('jc-bumper is-l', 'L', 'L：重試當前關卡');
-    bindMomentaryButton(lBumper, () => {
-      pulseHaptic(10);
-      this.host.playUiSound('snap');
-      if (this.slotState.phase !== 'empty') this.host.retryStage();
-    });
+    bindMomentaryButton(
+      lBumper,
+      () => {
+        pulseHaptic(11);
+        this.host.playTactile('bumper', 'down');
+        this.triggerJoyconRecoil('left');
+        if (this.slotState.phase !== 'empty') this.host.retryStage();
+      },
+      () => {
+        this.host.playTactile('bumper', 'up');
+      },
+    );
 
     const lTop = el('div', 'jc-row');
     lTop.appendChild(
       btn('jc-sys-btn', '−', '− 換下一張卡匣', () => {
-        pulseHaptic(10);
         this.cycleCard();
       }),
     );
@@ -135,7 +142,6 @@ export class ConsoleView {
     lBottom.append(
       makeLeds(),
       btn('jc-sys-btn is-square', '◉', '截圖：儲存 PICO-8 風紀念卡匣 PNG', () => {
-        pulseHaptic(12);
         this.requestCapture();
       }),
     );
@@ -155,14 +161,11 @@ export class ConsoleView {
     this.slotLed.title = '卡槽狀態指示燈';
     this.slotHint = el('span', 'slot-hint', DEFAULT_SLOT_HINT);
     this.ejectBtn = btn('eject-btn panel-hidden', '⏏ 退出卡匣', undefined, () => {
-      pulseHaptic(10);
       this.eject();
     });
     this.clearSaveBtn = btn('eject-btn is-clear-save panel-hidden', '🗑 重頭', '清除這張卡匣的電池存檔並從第一關重開', () => {
       const id = this.getInserted();
       if (!id) return;
-      pulseHaptic(12);
-      this.host.playUiSound('snap');
       this.host.restartFresh();
       this.renderRecordBadge(id);
       this.showCaptureToast('🗑 已清除電池存檔，從第一關重新開始！');
@@ -179,8 +182,6 @@ export class ConsoleView {
     this.spriteStatTag = el('span', 'metric-tag', '精靈 0 · 0 draws');
     this.fpsTag = el('span', 'metric-tag', '60 FPS');
     this.exitLandscapeBtn = btn('handheld-exit-btn', '↩ 離開橫屏', '離開全螢幕橫屏掌機模式', () => {
-      pulseHaptic(10);
-      this.host.playUiSound('snap');
       this.onExitLandscape?.();
     });
     mRight.append(this.spriteStatTag, this.fpsTag, this.exitLandscapeBtn);
@@ -201,7 +202,6 @@ export class ConsoleView {
     const rpgTopRight = el('div', 'rpg-cluster');
     this.rpgEnemyEl = el('span', 'rpg-pill is-enemy panel-hidden');
     this.rpgAgentBtn = btn('rpg-agent-btn', '🤖 AI 託管', '開啟／關閉內建探索戰鬥 AI 代理', () => {
-      pulseHaptic(8);
       this.host.unlockAudio();
       this.host.runner.dispatchCommand('toggle_agent');
     });
@@ -224,13 +224,9 @@ export class ConsoleView {
     this.resultDesc = el('p');
     const resultActions = el('div', 'overlay-actions');
     const retryStageBtn = btn('toy-btn is-primary', '✨ 重試本關', undefined, () => {
-      pulseHaptic(10);
-      this.host.playUiSound('snap');
       this.host.retryStage();
     });
     const replayFreshBtn = btn('toy-btn', '🔄 從頭開始', undefined, () => {
-      pulseHaptic(10);
-      this.host.playUiSound('snap');
       this.host.restartFresh();
     });
     resultActions.append(retryStageBtn, replayFreshBtn);
@@ -249,7 +245,6 @@ export class ConsoleView {
     }
     const legend = el('div', 'body-legend', 'B 跳躍 · A/R 火花 · X 精靈派對 · F3 碰撞框 · L/+ 重試 · ⌂ 退卡');
     this.benchBtn = btn('bench-btn', '✨ 1,150+ GPU 精靈派對', undefined, () => {
-      pulseHaptic(10);
       this.toggleBenchmark();
     });
     footer.append(speakerL, legend, this.benchBtn, speakerR);
@@ -258,34 +253,40 @@ export class ConsoleView {
 
     // ---------- Joy-Con R ----------
     const right = el('div', 'joycon is-right');
+    this.rightJoyconEl = right;
     right.appendChild(el('div', 'jc-rail-glow'));
 
-    const rBumper = this.holdButton('jc-bumper is-r', 'R', 'action', 'R：火花 / 發射星光（等同 A 鍵）');
+    const rBumper = this.holdButton('jc-bumper is-r', 'R', 'action', 'R：火花 / 發射星光（等同 A 鍵）', 'bumper');
 
     const rTop = el('div', 'jc-row');
     rTop.appendChild(
       btn('jc-sys-btn', '+', '+ 重試本關', () => {
-        pulseHaptic(10);
-        this.host.playUiSound('snap');
         if (this.slotState.phase !== 'empty') this.host.retryStage();
       }),
     );
 
     const abxy = el('div', 'diamond is-abxy');
-    abxy.append(
-      btn('dia-btn is-x dia-n', 'X', 'X：1,150+ GPU 精靈派對', () => {
+    this.btnX = btn('dia-btn is-x dia-n', 'X', 'X：1,150+ GPU 精靈派對');
+    bindMomentaryButton(
+      this.btnX,
+      () => {
         pulseHaptic(10);
+        this.host.playTactile('face', 'down');
+        this.triggerJoyconRecoil('right');
         this.toggleBenchmark();
-      }),
-      this.holdButton('dia-btn is-y dia-w', 'Y', 'jump', 'Y：跳躍'),
-      this.holdButton('dia-btn is-a dia-e', 'A', 'action', 'A：火花 / 引爆 / 特技'),
-      this.holdButton('dia-btn is-b dia-s', 'B', 'jump', 'B：跳躍 / 發射'),
+      },
+      () => {
+        this.host.playTactile('face', 'up');
+      },
     );
+    this.btnY = this.holdButton('dia-btn is-y dia-w', 'Y', 'jump', 'Y：跳躍');
+    this.btnA = this.holdButton('dia-btn is-a dia-e', 'A', 'action', 'A：火花 / 引爆 / 特技');
+    this.btnB = this.holdButton('dia-btn is-b dia-s', 'B', 'jump', 'B：跳躍 / 發射');
+    abxy.append(this.btnX, this.btnY, this.btnA, this.btnB);
     const rStick = this.buildStick();
     const rBottom = el('div', 'jc-row');
     rBottom.append(
       btn('jc-sys-btn is-home', '⌂', 'HOME：退出卡匣回到主畫面', () => {
-        pulseHaptic(12);
         this.eject();
       }),
       makeLeds(),
@@ -571,7 +572,6 @@ export class ConsoleView {
       this.rpgActionsEl.textContent = '';
       opts.forEach((opt, i) => {
         const b = btn(`rpg-act-btn${i === selIdx ? ' is-selected' : ''}`, opt.label, undefined, () => {
-          pulseHaptic(8);
           this.host.unlockAudio();
           this.host.runner.dispatchCommand(opt.id);
         });
@@ -799,8 +799,49 @@ export class ConsoleView {
     return { dx: sx, dy: sy, halfW: rect.width / 2, halfH: rect.height / 2 };
   }
 
+  private triggerJoyconRecoil(side: 'left' | 'right'): void {
+    const jc = side === 'left' ? this.leftJoyconEl : this.rightJoyconEl;
+    if (!jc) return;
+    const prev = this.recoilTimers.get(jc);
+    if (prev !== undefined) window.clearTimeout(prev);
+    jc.classList.remove('is-recoiling');
+    void jc.offsetWidth;
+    jc.classList.add('is-recoiling');
+    const id = window.setTimeout(() => {
+      jc.classList.remove('is-recoiling');
+      this.recoilTimers.delete(jc);
+    }, 115);
+    this.recoilTimers.set(jc, id);
+  }
+
+  private syncControlsVisual(): void {
+    if (!this.dpadEl || !this.dpadBtns) return;
+    const l = this.padInput.left || this.keyInput.left || this.stickInput.left;
+    const r = this.padInput.right || this.keyInput.right || this.stickInput.right;
+    const u = this.padInput.up || this.keyInput.up || this.stickInput.up;
+    const d = this.padInput.down || this.keyInput.down || this.stickInput.down;
+
+    this.dpadBtns.left.classList.toggle('is-pressed', l);
+    this.dpadBtns.right.classList.toggle('is-pressed', r);
+    this.dpadBtns.up.classList.toggle('is-pressed', u);
+    this.dpadBtns.down.classList.toggle('is-pressed', d);
+
+    const ry = (r ? 10 : 0) - (l ? 10 : 0);
+    const rx = (u ? 10 : 0) - (d ? 10 : 0);
+    const tx = (r ? 1.5 : 0) - (l ? 1.5 : 0);
+    const ty = (d ? 1.5 : 0) - (u ? 1.5 : 0);
+    this.dpadEl.style.setProperty('--dpad-rx', `${rx}deg`);
+    this.dpadEl.style.setProperty('--dpad-ry', `${ry}deg`);
+    this.dpadEl.style.setProperty('--dpad-tx', `${tx}px`);
+    this.dpadEl.style.setProperty('--dpad-ty', `${ty}px`);
+
+    if (this.btnB) this.btnB.classList.toggle('is-pressed', this.touchButtons.has(this.btnB) || this.keyInput.jump);
+    if (this.btnY) this.btnY.classList.toggle('is-pressed', this.touchButtons.has(this.btnY));
+    if (this.btnA) this.btnA.classList.toggle('is-pressed', this.touchButtons.has(this.btnA) || this.keyInput.action);
+  }
+
   /**
-   * Tactile Switch D-Pad with thumb-slide support:
+   * Tactile Switch D-Pad with thumb-slide support, 3D rocker tilt, and rubber-dome switch acoustics:
    * sliding your thumb across directions updates Left/Right/Up/Down seamlessly without lifting.
    */
   private buildSlideDpad(): HTMLElement {
@@ -809,38 +850,44 @@ export class ConsoleView {
     const leftBtn = btn('dia-btn dia-w', '◀', '左');
     const rightBtn = btn('dia-btn dia-e', '▶', '右');
     const downBtn = btn('dia-btn dia-s', '▼', '下');
-    pad.append(upBtn, leftBtn, rightBtn, downBtn);
+    const pivot = el('span', 'dpad-pivot');
+    pivot.setAttribute('aria-hidden', 'true');
+    pad.append(upBtn, leftBtn, pivot, rightBtn, downBtn);
 
-    const syncVisual = () => {
-      upBtn.classList.toggle('is-pressed', this.padInput.up);
-      leftBtn.classList.toggle('is-pressed', this.padInput.left);
-      rightBtn.classList.toggle('is-pressed', this.padInput.right);
-      downBtn.classList.toggle('is-pressed', this.padInput.down);
-    };
+    this.dpadEl = pad;
+    this.dpadBtns = { up: upBtn, left: leftBtn, right: rightBtn, down: downBtn };
 
     const applyAt = (cx: number, cy: number) => {
       const loc = this.localDeltaFromCenter(pad.getBoundingClientRect(), cx, cy);
       const dx = loc.dx / Math.max(1, loc.halfW);
       const dy = loc.dy / Math.max(1, loc.halfH);
-      const prevL = this.padInput.left;
-      const prevR = this.padInput.right;
-      const prevU = this.padInput.up;
-      const prevD = this.padInput.down;
+      const prev: Record<Dir, boolean> = { ...this.padInput };
 
       this.padInput.left = dx < -0.22;
       this.padInput.right = dx > 0.22;
       this.padInput.up = dy < -0.26;
       this.padInput.down = dy > 0.26;
 
-      if (
-        this.padInput.left !== prevL ||
-        this.padInput.right !== prevR ||
-        this.padInput.up !== prevU ||
-        this.padInput.down !== prevD
-      ) {
-        pulseHaptic(6);
+      let pressedNew = false;
+      let releasedOld = false;
+      const dirs: Dir[] = ['left', 'right', 'up', 'down'];
+      for (const dir of dirs) {
+        if (this.padInput[dir] && !prev[dir]) {
+          pressedNew = true;
+          triggerImpactRing(this.dpadBtns[dir]);
+        } else if (!this.padInput[dir] && prev[dir]) {
+          releasedOld = true;
+        }
       }
-      syncVisual();
+
+      if (pressedNew) {
+        pulseHaptic(8);
+        this.host.playTactile('dpad', 'down');
+        this.triggerJoyconRecoil('left');
+      } else if (releasedOld) {
+        this.host.playTactile('dpad', 'up');
+      }
+      this.syncControlsVisual();
     };
 
     bindPointerDrag(pad, {
@@ -850,24 +897,39 @@ export class ConsoleView {
       },
       onMove: (e) => applyAt(e.clientX, e.clientY),
       onEnd: () => {
+        const hadAny = this.padInput.left || this.padInput.right || this.padInput.up || this.padInput.down;
         this.padInput = { left: false, right: false, up: false, down: false };
-        syncVisual();
+        if (hadAny) this.host.playTactile('dpad', 'up');
+        this.syncControlsVisual();
       },
     });
     return pad;
   }
 
-  private holdButton(cls: string, label: string, key: keyof InputState, title: string): HTMLButtonElement {
+  private holdButton(
+    cls: string,
+    label: string,
+    key: keyof InputState,
+    title: string,
+    profile: 'face' | 'bumper' = 'face',
+  ): HTMLButtonElement {
     const b = btn(cls, label, title);
     bindMomentaryButton(
       b,
       () => {
         this.host.unlockAudio();
-        if (!this.touchInput[key]) pulseHaptic(8);
+        this.touchButtons.add(b);
+        pulseHaptic(profile === 'bumper' ? 11 : 9);
+        this.host.playTactile(profile, 'down');
+        this.triggerJoyconRecoil('right');
         this.touchInput[key] = true;
+        this.syncControlsVisual();
       },
       () => {
+        this.touchButtons.delete(b);
         this.touchInput[key] = false;
+        this.host.playTactile(profile, 'up');
+        this.syncControlsVisual();
       },
     );
     return b;
@@ -878,12 +940,14 @@ export class ConsoleView {
     const knob = el('div', 'stick-knob');
     base.appendChild(knob);
     const maxR = 14;
+    let wasGated = false;
 
     const apply = (cx: number, cy: number) => {
       const loc = this.localDeltaFromCenter(base.getBoundingClientRect(), cx, cy);
       let dx = loc.dx;
       let dy = loc.dy;
       const len = Math.hypot(dx, dy);
+      const isGated = len >= maxR * 0.88;
       if (len > maxR) {
         dx = (dx / len) * maxR;
         dy = (dy / len) * maxR;
@@ -895,20 +959,32 @@ export class ConsoleView {
       this.stickInput.right = nx > 0.35;
       this.stickInput.up = ny < -0.42;
       this.stickInput.down = ny > 0.42;
+
+      base.classList.toggle('is-gated', isGated);
+      if (isGated && !wasGated) {
+        pulseHaptic(5);
+        this.host.playTactile('stick', 'down');
+      }
+      wasGated = isGated;
+      this.syncControlsVisual();
     };
 
     bindPointerDrag(base, {
       onStart: (e) => {
         this.host.unlockAudio();
-        pulseHaptic(6);
+        pulseHaptic(7);
+        this.host.playTactile('stick', 'down');
         base.classList.add('is-active');
         apply(e.clientX, e.clientY);
       },
       onMove: (e) => apply(e.clientX, e.clientY),
       onEnd: () => {
-        base.classList.remove('is-active');
+        wasGated = false;
+        base.classList.remove('is-active', 'is-gated');
         knob.style.transform = '';
         this.stickInput = { left: false, right: false, up: false, down: false };
+        this.host.playTactile('stick', 'up');
+        this.syncControlsVisual();
       },
     });
     return base;
@@ -920,6 +996,7 @@ export class ConsoleView {
       if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
       if (this.element.closest('.panel-hidden') || this.element.classList.contains('panel-hidden')) return;
       const k = this.keyInput;
+      const prev: InputState = { ...k };
       let matched = true;
       switch (e.code) {
         case 'ArrowLeft':
@@ -952,6 +1029,7 @@ export class ConsoleView {
           break;
         case 'F3':
           if (down && !e.repeat) {
+            this.host.playTactile('system', 'down');
             const on = this.host.runner.toggleDebugHitboxes();
             this.showCaptureToast(on ? '🧪 除錯碰撞框：開啟' : '🧪 除錯碰撞框：關閉');
           }
@@ -974,9 +1052,40 @@ export class ConsoleView {
       if (matched) {
         if (down) this.host.unlockAudio();
         e.preventDefault();
+
+        const dirs: Dir[] = ['left', 'right', 'up', 'down'];
+        for (const dir of dirs) {
+          if (k[dir] && !prev[dir]) {
+            this.host.playTactile('dpad', 'down');
+            triggerImpactRing(this.dpadBtns[dir]);
+            this.triggerJoyconRecoil('left');
+          } else if (!k[dir] && prev[dir]) {
+            this.host.playTactile('dpad', 'up');
+          }
+        }
+        if (k.jump && !prev.jump) {
+          this.host.playTactile('face', 'down');
+          triggerImpactRing(this.btnB);
+          this.triggerJoyconRecoil('right');
+        } else if (!k.jump && prev.jump) {
+          this.host.playTactile('face', 'up');
+        }
+        if (k.action && !prev.action) {
+          this.host.playTactile('face', 'down');
+          triggerImpactRing(this.btnA);
+          this.triggerJoyconRecoil('right');
+        } else if (!k.action && prev.action) {
+          this.host.playTactile('face', 'up');
+        }
+
+        this.syncControlsVisual();
       }
     };
     window.addEventListener('keydown', (e) => handle(e, true));
     window.addEventListener('keyup', (e) => handle(e, false));
+    window.addEventListener('blur', () => {
+      this.keyInput = blankInput();
+      this.syncControlsVisual();
+    });
   }
 }

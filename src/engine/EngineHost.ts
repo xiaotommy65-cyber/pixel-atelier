@@ -1,4 +1,4 @@
-import type { SoundPreset, ToySynth } from '../audio/ToySynth.ts';
+import type { SoundPreset, TactilePhase, TactileSwitchProfile, ToySynth } from '../audio/ToySynth.ts';
 import type { CartridgeRunner } from './CartridgeRunner.ts';
 import type { CardRecord, SaveService } from './SaveService.ts';
 import type { CartridgeId, InputState, RenderSceneSnapshot, SimEvent } from './WorldTypes.ts';
@@ -39,6 +39,11 @@ export class EngineHost {
   public playUiSound(preset: SoundPreset): void {
     this.synth.unlock();
     this.synth.playPreset(preset);
+  }
+
+  public playTactile(profile: TactileSwitchProfile, phase: TactilePhase = 'down'): void {
+    this.synth.unlock();
+    this.synth.playTactile(profile, phase);
   }
 
   public stopBgm(): void {

@@ -191,7 +191,6 @@ export class SpriteAtelierView {
         '',
         idx === 0 ? '透明橡皮擦' : `色票 ${idx} (${hex})`,
         () => {
-          this.synth.playPreset('snap');
           this.selectedColor = idx;
           this.syncPaletteSelection();
         },

@@ -4,7 +4,7 @@ import {
   type SynthWaveform,
   type ToySynth,
 } from '../audio/ToySynth.ts';
-import { btn, el } from './dom.ts';
+import { bindMomentaryButton, btn, el } from './dom.ts';
 
 const WAVE_OPTIONS: { id: SynthWaveform; label: string }[] = [
   { id: 'triangle', label: '🍦 奶霜三角波' },
@@ -61,12 +61,9 @@ export class SynthPianoView {
       const keyBtn = btn('piano-key', '');
       keyBtn.style.backgroundColor = k.color;
       keyBtn.innerHTML = `<span>${k.label}</span><span class="piano-note">${k.note}</span>`;
-      keyBtn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
+      bindMomentaryButton(keyBtn, () => {
         this.synth.unlock();
         this.synth.playNote(k.freq, 0.36);
-        keyBtn.classList.add('is-ringing');
-        setTimeout(() => keyBtn.classList.remove('is-ringing'), 180);
         this.onPlayReact?.();
       });
       keysGrid.appendChild(keyBtn);
