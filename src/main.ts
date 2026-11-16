@@ -17,7 +17,6 @@ import { ConsoleView } from './ui/ConsoleView.ts';
 import { installGlobalTactileFeedback } from './ui/dom.ts';
 import { drawAtlasSpriteToCanvas } from './ui/MomoMascot.ts';
 import { SpriteAtelierView } from './ui/SpriteAtelierView.ts';
-import { SynthPianoView } from './ui/SynthPianoView.ts';
 import { WorkshopView } from './ui/WorkshopView.ts';
 
 declare global {
@@ -26,7 +25,7 @@ declare global {
   }
 }
 
-type StationId = 'play' | 'sprite' | 'workshop' | 'synth';
+type StationId = 'play' | 'sprite' | 'workshop';
 type ShellTheme = 'mint' | 'berry' | 'honey' | 'sky';
 
 const SHELL_THEMES: { id: ShellTheme; label: string; left: string; right: string }[] = [
@@ -40,7 +39,6 @@ const STATIONS: { id: StationId; icon: string; label: string }[] = [
   { id: 'play', icon: '🎮', label: '遊玩台' },
   { id: 'sprite', icon: '🎨', label: '精靈畫室' },
   { id: 'workshop', icon: '🧱', label: '積木工房' },
-  { id: 'synth', icon: '🎹', label: '音效琴' },
 ];
 
 function createApp() {
@@ -242,7 +240,6 @@ function createApp() {
     switchStation('play');
     consoleView.insertCartridge(targetId);
   });
-  const synthPianoView = new SynthPianoView(synth, triggerMomoHappy);
 
   switchStation = (next: StationId) => {
     activeStation = next;
@@ -252,7 +249,6 @@ function createApp() {
     consoleView.element.classList.toggle('panel-hidden', next !== 'play');
     spriteAtelierView.element.classList.toggle('panel-hidden', next !== 'sprite');
     workshopView.element.classList.toggle('panel-hidden', next !== 'workshop');
-    synthPianoView.element.classList.toggle('panel-hidden', next !== 'synth');
 
     for (const [id, btn] of tabBtns.entries()) {
       btn.classList.toggle('is-active', id === next);
@@ -278,7 +274,6 @@ function createApp() {
     consoleView.element,
     spriteAtelierView.element,
     workshopView.element,
-    synthPianoView.element,
   );
   root.appendChild(shell);
   switchStation('play');

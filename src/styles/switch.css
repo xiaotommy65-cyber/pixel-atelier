@@ -34,24 +34,34 @@
 
 .joycon.is-left {
   grid-area: left;
-  background: var(--jc-left);
+  background:
+    linear-gradient(106deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 28%, transparent 58%, rgba(28, 22, 25, 0.14) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 22%, rgba(28, 22, 25, 0.08) 100%),
+    var(--jc-left);
   border-right: none;
   border-radius: 66px 10px 10px 66px / 70px 10px 10px 70px;
   box-shadow:
-    inset 0 5px 0 rgba(255, 255, 255, 0.42),
+    inset 0 5px 0 rgba(255, 255, 255, 0.44),
     inset 7px -7px 0 var(--jc-left-shade),
-    0 8px 0 var(--ink);
+    inset -3px 0 6px rgba(28, 22, 25, 0.2),
+    0 8px 0 var(--ink),
+    0 18px 28px -6px rgba(42, 30, 24, 0.24);
 }
 
 .joycon.is-right {
   grid-area: right;
-  background: var(--jc-right);
+  background:
+    linear-gradient(254deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 28%, transparent 58%, rgba(28, 22, 25, 0.14) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 22%, rgba(28, 22, 25, 0.08) 100%),
+    var(--jc-right);
   border-left: none;
   border-radius: 10px 66px 66px 10px / 10px 70px 70px 10px;
   box-shadow:
-    inset 0 5px 0 rgba(255, 255, 255, 0.42),
+    inset 0 5px 0 rgba(255, 255, 255, 0.44),
     inset -7px -7px 0 var(--jc-right-shade),
-    0 8px 0 var(--ink);
+    inset 3px 0 6px rgba(28, 22, 25, 0.2),
+    0 8px 0 var(--ink),
+    0 18px 28px -6px rgba(42, 30, 24, 0.24);
 }
 
 .joycon.is-recoiling {
@@ -225,9 +235,11 @@
   width: 62px;
   height: 62px;
   border-radius: 50%;
-  background: #2d2427;
+  background: radial-gradient(circle at 50% 56%, #241c1f 0%, #31272a 78%, #1d1719 100%);
   border: 3px solid var(--ink);
-  box-shadow: inset 0 4px 0 rgba(0, 0, 0, 0.35);
+  box-shadow:
+    inset 0 5px 8px rgba(0, 0, 0, 0.55),
+    0 1.5px 0 rgba(255, 255, 255, 0.24);
   touch-action: none;
   cursor: grab;
   flex-shrink: 0;
@@ -236,8 +248,8 @@
 
 .stick.is-gated {
   box-shadow:
-    inset 0 4px 0 rgba(0, 0, 0, 0.42),
-    0 0 0 2.5px rgba(255, 212, 71, 0.78);
+    inset 0 5px 8px rgba(0, 0, 0, 0.58),
+    0 0 0 2.5px rgba(255, 212, 71, 0.8);
 }
 
 .stick-knob {
@@ -248,16 +260,30 @@
   height: 40px;
   margin: -20px 0 0 -20px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #6b5c58 0%, #463a35 70%);
+  background: radial-gradient(circle at 38% 32%, #72635e 0%, #4d403b 52%, #362c28 100%);
   border: 2.5px solid var(--ink);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.24), 0 3px 0 var(--ink);
+  box-shadow:
+    inset 0 2.5px 0 rgba(255, 255, 255, 0.24),
+    0 3.5px 0 var(--ink),
+    0 6px 8px rgba(20, 14, 16, 0.35);
   transition: transform 140ms var(--ease-bounce), box-shadow 80ms ease;
   pointer-events: none;
 }
 
+.stick-knob::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 58% 62%, rgba(255, 255, 255, 0.08) 0%, rgba(20, 14, 16, 0.28) 100%);
+  border: 1.5px solid rgba(28, 22, 25, 0.42);
+}
+
 .stick.is-active .stick-knob {
   transition: none;
-  box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.35), 0 1.5px 0 var(--ink);
+  box-shadow:
+    inset 0 1.5px 3px rgba(0, 0, 0, 0.38),
+    0 1.5px 0 var(--ink);
   filter: brightness(1.08);
 }
 
@@ -270,7 +296,7 @@
   height: 15px;
   border: 2.5px solid var(--ink);
   border-bottom: none;
-  background: #4e4246;
+  background: linear-gradient(180deg, #625458 0%, #483c40 100%);
   color: #fffaf0;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.65rem;
@@ -280,7 +306,7 @@
   place-items: center;
   cursor: pointer;
   touch-action: none;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), 0 2px 0 rgba(28, 22, 25, 0.35);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.32), 0 2px 0 rgba(28, 22, 25, 0.35);
   transition: transform 105ms var(--ease-bounce), background 105ms ease, box-shadow 105ms ease;
 }
 
@@ -302,17 +328,19 @@
   box-shadow: inset 0 1.5px 2px rgba(0, 0, 0, 0.35), 0 0 0 transparent;
 }
 
-/* Diamond button clusters (physical recessed socket + 3D D-Pad rocker + tactile press travel) */
+/* Diamond button clusters (physical recessed socket + 3D D-Pad rocker + domed keycaps) */
 .diamond {
   display: grid;
   grid-template-columns: repeat(3, 34px);
   grid-template-rows: repeat(3, 34px);
   gap: 2px;
   touch-action: none;
-  padding: 4px;
+  padding: 5px;
   border-radius: 50%;
-  background: rgba(28, 22, 25, 0.16);
-  box-shadow: inset 0 2.5px 5px rgba(28, 22, 25, 0.26);
+  background: radial-gradient(circle at 50% 54%, rgba(28, 22, 25, 0.22) 0%, rgba(28, 22, 25, 0.12) 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(24, 18, 20, 0.32),
+    0 1.5px 0 rgba(255, 255, 255, 0.25);
 }
 
 .diamond.is-dpad {
@@ -331,9 +359,9 @@
   width: 62%;
   height: 62%;
   border-radius: 50%;
-  background: radial-gradient(circle at 42% 38%, rgba(255, 255, 255, 0.14), rgba(28, 22, 25, 0.36));
+  background: radial-gradient(circle at 42% 38%, rgba(255, 255, 255, 0.14), rgba(28, 22, 25, 0.38));
   border: 2px solid rgba(56, 40, 32, 0.45);
-  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.34);
   pointer-events: none;
 }
 
@@ -344,7 +372,13 @@
   height: 34px;
   border-radius: 50%;
   border: 2.5px solid var(--ink);
-  background: #463a35;
+  background-color: #463a35;
+  background-image: radial-gradient(
+    circle at 32% 24%,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0.06) 44%,
+    rgba(20, 14, 16, 0.14) 100%
+  );
   color: #fffaf0;
   font-weight: 900;
   font-size: 0.8rem;
@@ -352,16 +386,17 @@
   display: grid;
   place-items: center;
   box-shadow:
-    inset 0 2.5px 0 rgba(255, 255, 255, 0.34),
-    0 4.5px 0 var(--ink);
+    inset 0 2px 0 rgba(255, 255, 255, 0.34),
+    0 4.5px 0 var(--ink),
+    0 6px 5px rgba(24, 18, 20, 0.22);
   touch-action: none;
   transition: transform 105ms var(--ease-bounce), box-shadow 105ms ease, filter 105ms ease;
 }
 
-.dia-btn.is-a { background: var(--accent-honey); color: var(--ink); }
-.dia-btn.is-b { background: var(--accent-coral); color: #fffdf8; }
-.dia-btn.is-x { background: var(--accent-sky); color: var(--ink); }
-.dia-btn.is-y { background: var(--accent-mint); color: var(--ink); }
+.dia-btn.is-a { background-color: var(--accent-honey); color: var(--ink); }
+.dia-btn.is-b { background-color: var(--accent-coral); color: #fffdf8; }
+.dia-btn.is-x { background-color: var(--accent-sky); color: var(--ink); }
+.dia-btn.is-y { background-color: var(--accent-mint); color: var(--ink); }
 
 .dia-btn:active,
 .dia-btn.is-pressed {
@@ -383,12 +418,14 @@
 .console-body {
   grid-area: body;
   position: relative;
-  background: var(--console-body);
+  background: linear-gradient(180deg, #4b4045 0%, var(--console-body) 22%, #2f272b 100%);
   border: 3px solid var(--ink);
   border-radius: 8px;
   box-shadow:
-    inset 0 4px 0 var(--console-body-hi),
-    0 8px 0 var(--ink);
+    inset 0 3px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.28),
+    0 8px 0 var(--ink),
+    0 18px 28px -6px rgba(42, 30, 24, 0.24);
   padding: 14px 14px 10px;
   display: flex;
   flex-direction: column;
@@ -408,9 +445,10 @@
   width: 26px;
   height: 7px;
   border-radius: 4px 4px 0 0;
-  background: #5a4d50;
+  background: linear-gradient(180deg, #6e6064 0%, #4b4043 100%);
   border: 2px solid var(--ink);
   border-bottom: none;
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.28);
 }
 
 /* Cartridge slot on the top edge */
@@ -617,10 +655,13 @@
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   border: 3px solid #161114;
   background: #6dbcf2;
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.08),
+    0 4px 10px rgba(0, 0, 0, 0.42);
 }
 
 .screen-frame::after {
@@ -629,7 +670,8 @@
   inset: 0;
   pointer-events: none;
   z-index: 4;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 34%, transparent 56%);
+  background: linear-gradient(132deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 30%, transparent 52%);
+  box-shadow: inset 0 0 14px rgba(16, 12, 18, 0.24);
 }
 
 .game-canvas {
@@ -811,7 +853,10 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #1c1619;
+  background: #171215;
+  box-shadow:
+    inset 0 1.5px 1px rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .body-legend {
@@ -849,10 +894,14 @@
 
 /* ---------- Game card case ---------- */
 .card-case {
-  background: #f2e3c9;
+  background: linear-gradient(180deg, #f5e9d3 0%, #eddcbf 100%);
   border: var(--border-w) solid var(--ink);
   border-radius: var(--radius-lg);
-  box-shadow: inset 0 4px 0 rgba(255, 255, 255, 0.6), 0 5px 0 var(--ink);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -3px 8px rgba(56, 40, 32, 0.08),
+    0 5px 0 var(--ink),
+    0 12px 22px rgba(56, 40, 32, 0.08);
   padding: 12px 14px 16px;
   display: flex;
   flex-direction: column;
@@ -890,8 +939,13 @@
   width: 118px;
   border: 2.5px solid var(--ink);
   border-radius: 9px 22px 9px 9px;
-  background: linear-gradient(var(--card-accent) 0 20px, #fffdf8 20px);
-  box-shadow: 0 4px 0 var(--ink);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, transparent 45%),
+    linear-gradient(var(--card-accent) 0 20px, #fffdf8 20px);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
+    0 4px 0 var(--ink),
+    0 8px 14px rgba(56, 40, 32, 0.12);
   padding: 4px 7px 8px;
   display: flex;
   flex-direction: column;
@@ -904,6 +958,10 @@
 
 .game-card:hover {
   transform: translateY(-4px) rotate(-1.5deg);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    0 7px 0 var(--ink),
+    0 14px 20px rgba(56, 40, 32, 0.18);
 }
 
 .game-card.is-dragging {
