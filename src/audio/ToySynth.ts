@@ -13,7 +13,9 @@ export type SoundPreset =
   | 'bounce'
   | 'explode'
   | 'ignite'
-  | 'snap';
+  | 'snap'
+  | 'charge'
+  | 'rail';
 
 export type TactileSwitchProfile = 'face' | 'dpad' | 'bumper' | 'system' | 'ui' | 'stick';
 export type TactilePhase = 'down' | 'up';
@@ -127,6 +129,8 @@ const PRESET_COOLDOWN_MS: Record<SoundPreset, number> = {
   explode: 55,
   ignite: 60,
   snap: 20,
+  charge: 75,
+  rail: 70,
 };
 
 export class ToySynth {
@@ -337,6 +341,15 @@ export class ToySynth {
         break;
       case 'snap':
         this.playTone(760 * jit, 520 * jit, 0.035, 0, 'sine', 0.3);
+        break;
+      case 'charge':
+        this.playTone(440 * ratio, 740 * ratio, 0.09, 0, 'triangle', 0.42);
+        this.playTone(660 * ratio, 1180 * ratio, 0.11, 0.02, 'sine', 0.38);
+        break;
+      case 'rail':
+        this.playTone(760 * jit, 130, 0.2, 0, 'triangle', 0.72);
+        this.playTone(260 * jit, 62, 0.24, 0.01, 'sawtooth', 0.54);
+        this.playTone(1280 * jit, 460, 0.16, 0.015, 'sine', 0.42);
         break;
     }
   }

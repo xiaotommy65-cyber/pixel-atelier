@@ -84,7 +84,25 @@ export class JuiceSystem {
         this.particles.splice(i, 1);
         continue;
       }
-      p.vy += (p.gravity ?? 0) * dt;
+      if (p.targetX !== undefined && p.targetY !== undefined) {
+        const dx = p.targetX - p.x;
+        const dy = p.targetY - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= (p.convergeSnapRadius ?? 2.8)) {
+          this.particles.splice(i, 1);
+          continue;
+        }
+        const pull = p.pull ?? 380;
+        p.vx += (dx / dist) * pull * dt;
+        p.vy += (dy / dist) * pull * dt;
+        if (p.damping && p.damping > 0) {
+          const damp = Math.max(0, 1 - p.damping * dt);
+          p.vx *= damp;
+          p.vy *= damp;
+        }
+      } else {
+        p.vy += (p.gravity ?? 0) * dt;
+      }
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vRot * dt;
@@ -95,6 +113,12 @@ export class JuiceSystem {
       return 0;
     }
     return dt;
+  }
+
+  private trimPool(limit = 180): void {
+    if (this.particles.length > limit) {
+      this.particles.splice(0, this.particles.length - limit);
+    }
   }
 
   public spawnBurst(
@@ -140,6 +164,65 @@ export class JuiceSystem {
         gravity: grav,
       });
     }
+    this.trimPool();
+  }
+
+  /**
+   * Spawns inward-spiraling particles pulled toward (targetX, targetY) — ideal for charge skills.
+   */
+  public spawnConverge(
+    targetX: number,
+    targetY: number,
+    colors: readonly string[],
+    count: number,
+    density = 1,
+    opts?: {
+      radiusMin?: number;
+      radiusMax?: number;
+      pull?: number;
+      swirlSpeed?: number;
+      maxLife?: number;
+      sprite?: SpriteId;
+      sizeMin?: number;
+      sizeMax?: number;
+      snapRadius?: number;
+    },
+  ): void {
+    const actual = Math.max(1, Math.round(count * Math.max(0.35, density)));
+    const rMin = opts?.radiusMin ?? 18;
+    const rMax = opts?.radiusMax ?? 34;
+    const pull = opts?.pull ?? 460;
+    const swirl = opts?.swirlSpeed ?? 34;
+    const maxLife = opts?.maxLife ?? 0.32;
+
+    for (let i = 0; i < actual; i++) {
+      const ang = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(rMin, rMax);
+      const px = targetX + Math.cos(ang) * r;
+      const py = targetY + Math.sin(ang) * r;
+      const tangentDir = i % 2 === 0 ? 1 : -1;
+      const useSprite = opts?.sprite;
+      this.particles.push({
+        x: px,
+        y: py,
+        vx: -Math.cos(ang) * 28 - Math.sin(ang) * swirl * tangentDir,
+        vy: -Math.sin(ang) * 28 + Math.cos(ang) * swirl * tangentDir,
+        life: 0,
+        maxLife,
+        size: useSprite ? this.rng.range(opts?.sizeMin ?? 4, opts?.sizeMax ?? 7) : this.rng.range(1.6, 3.0),
+        color: colors[i % colors.length],
+        rot: ang,
+        vRot: tangentDir * 5,
+        sprite: useSprite,
+        additive: true,
+        targetX,
+        targetY,
+        pull,
+        damping: 3.2,
+        convergeSnapRadius: opts?.snapRadius ?? 3,
+      });
+    }
+    this.trimPool();
   }
 }
 

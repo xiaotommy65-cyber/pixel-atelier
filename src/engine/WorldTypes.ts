@@ -13,7 +13,9 @@ export type SimEvent =
   | 'bounce'
   | 'explode'
   | 'ignite'
-  | 'snap';
+  | 'snap'
+  | 'charge'
+  | 'rail';
 
 export type BgmTheme = 'meadow' | 'starlight' | 'dungeon' | 'boss';
 
@@ -160,6 +162,11 @@ export interface ParticleDesc {
   sprite?: SpriteId;
   additive?: boolean;
   gravity?: number;
+  targetX?: number;
+  targetY?: number;
+  pull?: number;
+  damping?: number;
+  convergeSnapRadius?: number;
 }
 
 export interface LightDesc {

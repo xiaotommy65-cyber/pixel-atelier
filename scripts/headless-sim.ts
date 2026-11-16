@@ -56,12 +56,27 @@ function testCoreSubsystems() {
   const dtResumed = juice.advanceRealTime(0.02, 1.0);
   check(dtResumed > 0, 'JuiceSystem simDt resumes after hitstop expires');
 
-  // 4. ToySynth BGM Sequencer safe in headless env
+  // 4. JuiceSystem spawnConverge inward particle steering
+  juice.spawnConverge(100, 80, ['#5ec2f7', '#ffd447'], 4, 1.0, {
+    radiusMin: 20,
+    radiusMax: 24,
+    pull: 600,
+    maxLife: 0.5,
+  });
+  check(juice.particles.length >= 4, 'spawnConverge should spawn inward-converging particles');
+  const distBefore = Math.hypot(juice.particles[0].x - 100, juice.particles[0].y - 80);
+  for (let i = 0; i < 6; i++) juice.advanceRealTime(0.02, 1.0);
+  if (juice.particles.length > 0) {
+    const distAfter = Math.hypot(juice.particles[0].x - 100, juice.particles[0].y - 80);
+    check(distAfter < distBefore, 'Converging particles must pull inward toward target core');
+  }
+
+  // 5. ToySynth BGM Sequencer safe in headless env
   const synth = new ToySynth();
   synth.setBgmTheme('boss');
   synth.tickBgm(0.5);
   synth.setBgmTheme(null);
-  console.log('[SIM OK] core subsystems (SeededRng, InputMap, JuiceSystem, ToySynth BGM)');
+  console.log('[SIM OK] core subsystems (SeededRng, InputMap, JuiceSystem converge, ToySynth BGM)');
 }
 
 function testDungeonGeneratorSolvability() {
@@ -166,7 +181,7 @@ function testSugarStarlight() {
   for (let frame = 0; frame < 60 * 18; frame++) {
     const inp = emptyInput();
     inp.jump = true; // autofire B
-    inp.action = frame % 60 < 45; // test Hold-A charge beam release every 1s
+    inp.action = frame % 90 < 72; // hold A through Tier-1 (0.48s) and Tier-2 (1.05s)
     inp.up = Math.sin(frame * 0.08) > 0.2;
     inp.down = Math.sin(frame * 0.08) < -0.2;
     runner.stepFixed(STEP_DT, inp);
@@ -177,8 +192,41 @@ function testSugarStarlight() {
   check(maxScore >= 120, 'Sugar Starlight bolts + charge beam should destroy jelly UFO waves');
   check(snap.bgStars.length === 48, `Sugar Starlight parallax starfield populated (${snap.bgStars.length})`);
   check(snap.stage?.total === 4, 'PA-02 should expose 4-sector campaign progress');
+
+  // Dedicated verification of Converging Particles -> Tier-1 Piercing Cannon -> Tier-2 Floating Funnel Salvo
+  const ss = new SugarStarlightGame();
+  const params = runner.getParams();
+  let sawConvergingParticles = false;
+  let sawTier1ChargeEvent = false;
+  let sawTier1Rail = false;
+  let sawTier2Funnels = false;
+  let sawTier2MultiBeam = false;
+
+  // Phase A: Hold A for 0.60s (36 frames) -> reaches Tier 1 (0.48s), then release on frame 36
+  for (let f = 0; f < 38; f++) {
+    const evs = ss.step(STEP_DT, { ...emptyInput(), action: f < 36 }, params);
+    const sSnap = ss.snapshot(params);
+    if (sSnap.particles.some((p) => p.targetX !== undefined)) sawConvergingParticles = true;
+    if (evs.includes('charge')) sawTier1ChargeEvent = true;
+    if (evs.includes('rail')) sawTier1Rail = true;
+  }
+  check(sawConvergingParticles, 'PA-02 Hold-A should spawn inward-converging charge particles');
+  check(sawTier1ChargeEvent, 'PA-02 crossing Tier-1 (0.48s) should emit charge cue');
+  check(sawTier1Rail, 'PA-02 releasing Tier-1 should fire Piercing Cannon (rail)');
+
+  // Phase B: Hold A for 1.15s (69 frames) -> deploys Floating Funnels at Tier 2, then release on frame 69
+  for (let f = 0; f < 71; f++) {
+    ss.step(STEP_DT, { ...emptyInput(), action: f < 69 }, params);
+    const sSnap = ss.snapshot(params);
+    if (ss.getChargeTier() === 2 && ss.getActiveFunnelCount() >= 2) sawTier2Funnels = true;
+    const beamCount = sSnap.entities.filter((e) => e.sprite === 'laser_beam').length;
+    if (beamCount >= 5) sawTier2MultiBeam = true; // 3 main segments + 2+ funnel beam segments
+  }
+  check(sawTier2Funnels, 'PA-02 Tier-2 charge should deploy orbiting Floating Funnels');
+  check(sawTier2MultiBeam, 'PA-02 Tier-2 release should unleash multi-beam Floating Funnel Salvo');
+
   console.log(
-    `[SIM OK] sugar-starlight (4 sectors) -> score=${snap.score}, stage=${snap.stage?.index}/${snap.stage?.total}, bgm=${snap.bgmTheme}`,
+    `[SIM OK] sugar-starlight (4 sectors + 貫穿砲/浮游併發) -> score=${snap.score}, stage=${snap.stage?.index}/${snap.stage?.total}, bgm=${snap.bgmTheme}`,
   );
 }
 

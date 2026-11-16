@@ -125,9 +125,9 @@ export const CARTRIDGES: readonly CartridgeMeta[] = [
     subtitle: '4 大星區彈幕戰役',
     genre: '橫向射擊',
     accentHex: '#5ec2f7',
-    badgeText: '4 星區 × 子機 × 蓄力炮',
-    controlsHint: '方向鍵飛行・長按 B 連射・長按 A 蓄力貫穿星光炮',
-    goalHint: '擦彈回血、解鎖雙子子機，制霸 4 大星區與糖霜星皇母艦！',
+    badgeText: '4 星區 × 貫穿砲 × 浮游併發',
+    controlsHint: '方向鍵飛行・按 B 連射・長按 A 凝聚粒子（1段貫穿砲 → 2段浮游併發）',
+    goalHint: '擦彈加速蓄力兼回血，解鎖浮游子機陣列制霸 4 大星區與糖霜星皇母艦！',
     defaultScript: DEFAULT_SANDBOX_SCRIPT,
   },
   {
